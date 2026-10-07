@@ -48,25 +48,28 @@ struct IslandView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Fond
-            BottomRounded(radius: model.expanded ? 28 : 12)
-                .fill(Color(red: 0.03, green: 0.03, blue: 0.04))
-                .overlay(
-                    BottomRounded(radius: model.expanded ? 28 : 12)
-                        .fill(RadialGradient(colors: [data.accent.opacity(model.expanded && data.music != nil ? 0.22 : 0),
-                                                      .clear],
-                                             center: .top, startRadius: 0, endRadius: 260))
-                )
-                .shadow(color: .black.opacity(model.expanded ? 0.6 : 0), radius: 24, y: 12)
-
-            if model.expanded { expandedView } else { collapsedView }
+        let exp = model.expanded
+        VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                BottomRounded(radius: exp ? 28 : 12)
+                    .fill(Color(red: 0.03, green: 0.03, blue: 0.04))
+                    .overlay(
+                        BottomRounded(radius: exp ? 28 : 12)
+                            .fill(RadialGradient(colors: [data.accent.opacity(exp && data.music != nil ? 0.22 : 0), .clear],
+                                                 center: .top, startRadius: 0, endRadius: 260))
+                    )
+                if exp { expandedView.transition(.opacity) } else { collapsedView.transition(.opacity) }
+            }
+            .frame(width: exp ? Island.expandedW : Island.collapsedW,
+                   height: exp ? Island.expandedH : Island.collapsedH)
+            .clipShape(BottomRounded(radius: exp ? 28 : 12))
+            .shadow(color: .black.opacity(exp ? 0.55 : 0), radius: 22, y: 10)
+            .contentShape(BottomRounded(radius: exp ? 28 : 12))
+            .onHover { h in withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { model.expanded = h } }
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .onHover { h in
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { model.expanded = h }
-        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: model.expanded)
         .ignoresSafeArea()
     }
 

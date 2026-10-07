@@ -63,7 +63,7 @@ final class SystemData: ObservableObject {
         musicBusy = true
         q.async {
             defer { self.musicBusy = false }
-            let out = Self.runOsa(Self.musicScript, timeout: 4)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let out = Self.runOsa(Self.buildMusicScript(), timeout: 4)?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let out, !out.isEmpty, out != "none" else {
                 DispatchQueue.main.async { self.music = nil; self.artwork = nil }
                 return
@@ -166,47 +166,64 @@ final class SystemData: ObservableObject {
         runShell("/usr/bin/osascript", ["-e", script], timeout: timeout)
     }
 
-    static let musicScript = """
-    set out to "none"
-    if (running of application "Music") then
-      tell application "Music"
-        try
-          if player state is not stopped then
-            set pos to 0
-            set dur to 0
-            try
-              set pos to player position
-              set dur to duration of current track
-            end try
-            set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Music||" & pos & "||" & dur
-          end if
-        end try
-      end tell
-    end if
-    if out is "none" and (running of application "Spotify") then
-      tell application "Spotify"
-        try
-          set pos to 0
-          set dur to 0
-          try
-            set pos to player position
-            set dur to (duration of current track) / 1000
-          end try
-          set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Spotify||" & pos & "||" & dur
-        end try
-      end tell
-    end if
-    return out
-    """
+    // On ne référence une app que si elle est RÉELLEMENT installée,
+    // sinon macOS affiche « Où est <app> ? » en boucle.
+    static var hasMusic: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Music") != nil }
+    static var hasSpotify: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") != nil }
+
+    static func buildMusicScript() -> String {
+        var s = "set out to \"none\"\n"
+        if hasMusic {
+            s += """
+            if (running of application "Music") then
+              tell application "Music"
+                try
+                  if player state is not stopped then
+                    set pos to 0
+                    set dur to 0
+                    try
+                      set pos to player position
+                      set dur to duration of current track
+                    end try
+                    set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Music||" & pos & "||" & dur
+                  end if
+                end try
+              end tell
+            end if
+            """ + "\n"
+        }
+        if hasSpotify {
+            s += """
+            if out is "none" and (running of application "Spotify") then
+              tell application "Spotify"
+                try
+                  set pos to 0
+                  set dur to 0
+                  try
+                    set pos to player position
+                    set dur to (duration of current track) / 1000
+                  end try
+                  set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Spotify||" & pos & "||" & dur
+                end try
+              end tell
+            end if
+            """ + "\n"
+        }
+        s += "return out"
+        return s
+    }
 
     static func controlMusic(_ verb: String) {
-        let script = """
-        if (running of application "Music") then
-          tell application "Music" to \(verb)
-        else if (running of application "Spotify") then
-          tell application "Spotify" to \(verb)
-        end if
-        """
+        var s = ""
+        if hasMusic { s += "if (running of application \"Music\") then\n  tell application \"Music\" to \(verb)\n" }
+        if hasSpotify {
+            s += s.isEmpty ? "if (running of application \"Spotify\") then\n  tell application \"Spotify\" to \(verb)\nend if"
+                           : "else if (running of application \"Spotify\") then\n  tell application \"Spotify\" to \(verb)\nend if"
+        } else if !s.isEmpty {
+            s += "end if"
+        }
+        guard !s.isEmpty else { return }
+        let script = s
         DispatchQueue.global(qos: .userInitiated).async { _ = runOsa(script, timeout: 4) }
     }
 

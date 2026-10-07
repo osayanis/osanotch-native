@@ -64,8 +64,6 @@ struct IslandView: View {
                    height: exp ? Island.expandedH : Island.collapsedH)
             .clipShape(BottomRounded(radius: exp ? 28 : 12))
             .shadow(color: .black.opacity(exp ? 0.55 : 0), radius: 22, y: 10)
-            .contentShape(BottomRounded(radius: exp ? 28 : 12))
-            .onHover { h in withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { model.expanded = h } }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

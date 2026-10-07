@@ -9,7 +9,7 @@ final class AppModel: ObservableObject {
 }
 
 enum Island {
-    static let collapsedW: CGFloat = 200
+    static let collapsedW: CGFloat = 210
     static let collapsedH: CGFloat = 34
     static let expandedW: CGFloat = 380
     static let expandedH: CGFloat = 338
@@ -21,19 +21,9 @@ final class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
-// Laisse passer les clics hors de la forme visible (le reste de la fenêtre est transparent).
-final class HitThroughView: NSView {
-    var activeRect: CGRect = .zero
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        activeRect.contains(point) ? super.hitTest(point) : nil
-    }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     var panel: IslandPanel!
-    var container: HitThroughView!
-    var cancellables = Set<AnyCancellable>()
     var cursorTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -56,40 +46,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
         panel.isMovable = false
+        panel.ignoresMouseEvents = true // clic-through par défaut ; activé seulement sur la forme
 
-        container = HitThroughView(frame: NSRect(x: 0, y: 0, width: W, height: H))
         let host = NSHostingView(rootView: IslandView(model: model, data: model.data))
-        host.frame = container.bounds
+        host.frame = NSRect(x: 0, y: 0, width: W, height: H)
         host.autoresizingMask = [.width, .height]
-        host.layer?.backgroundColor = .clear
-        container.addSubview(host)
-        panel.contentView = container
+        panel.contentView = host
 
-        updateHitRect(expanded: false)
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
 
-        model.$expanded.removeDuplicates()
-            .sink { [weak self] exp in self?.updateHitRect(expanded: exp) }
-            .store(in: &cancellables)
-
+        // Moniteur global du curseur : pilote ouverture/fermeture + clic-through.
         cursorTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.model.cursor = NSEvent.mouseLocation
+            self?.tick()
         }
         model.data.start()
     }
 
-    // Rectangle cliquable = la forme visible (coords vue, origine bas-gauche, forme en HAUT)
-    func updateHitRect(expanded: Bool) {
-        let W = Island.expandedW, H = Island.expandedH
-        if expanded {
-            container.activeRect = CGRect(x: 0, y: 0, width: W, height: H)
-        } else {
-            let w = Island.collapsedW, h = Island.collapsedH
-            container.activeRect = CGRect(x: (W - w) / 2, y: H - h, width: w, height: h)
+    func tick() {
+        let p = NSEvent.mouseLocation
+        model.cursor = p
+        guard let sf = (panel.screen ?? NSScreen.main)?.frame else { return }
+
+        // Zone de déclenchement (repli) : LARGE et pile sur l'encoche → survol facile.
+        let trigW: CGFloat = 280, trigH: CGFloat = 42
+        let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
+        // Forme déployée
+        let expRect = CGRect(x: sf.midX - Island.expandedW / 2, y: sf.maxY - Island.expandedH, width: Island.expandedW, height: Island.expandedH)
+        // Forme visible actuelle
+        let shapeRect = model.expanded ? expRect
+            : CGRect(x: sf.midX - Island.collapsedW / 2, y: sf.maxY - Island.collapsedH, width: Island.collapsedW, height: Island.collapsedH)
+
+        if model.expanded {
+            if !expRect.insetBy(dx: -6, dy: -6).contains(p) { model.expanded = false }
+        } else if trigger.contains(p) {
+            model.expanded = true
         }
+
+        // Clic-through partout SAUF sur la forme visible → aucune zone morte.
+        panel.ignoresMouseEvents = !shapeRect.contains(p)
     }
 }

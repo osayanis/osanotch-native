@@ -75,9 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
         // Forme déployée
         let expRect = CGRect(x: sf.midX - Island.expandedW / 2, y: sf.maxY - Island.expandedH, width: Island.expandedW, height: Island.expandedH)
-        // Forme visible actuelle
+        // Forme visible actuelle (repli large pour couvrir le mode lecture)
+        let colW: CGFloat = 310
         let shapeRect = model.expanded ? expRect
-            : CGRect(x: sf.midX - Island.collapsedW / 2, y: sf.maxY - Island.collapsedH, width: Island.collapsedW, height: Island.collapsedH)
+            : CGRect(x: sf.midX - colW / 2, y: sf.maxY - Island.collapsedH, width: colW, height: Island.collapsedH)
 
         if model.expanded {
             if !expRect.insetBy(dx: -6, dy: -6).contains(p) { model.expanded = false }

@@ -11,8 +11,8 @@ final class AppModel: ObservableObject {
 enum Island {
     static let collapsedW: CGFloat = 210
     static let collapsedH: CGFloat = 34
-    static let expandedW: CGFloat = 380
-    static let expandedH: CGFloat = 338
+    static let expandedW: CGFloat = 440
+    static let expandedH: CGFloat = 200
 }
 
 // Panneau qui refuse le clamp AppKit sous la barre de menus → colle au sommet.

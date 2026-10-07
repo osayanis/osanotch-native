@@ -1,0 +1,4 @@
+.build/
+OsaNotch.app/
+dist/
+.DS_Store

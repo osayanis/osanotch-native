@@ -53,10 +53,10 @@ struct OsaCastView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
-                    .foregroundColor(hosting ? accent.opacity(0.5) : .white.opacity(0.2))
+                    .foregroundColor(.white.opacity(0.2))
                 if hosting {
                     VStack(spacing: 10) {
-                        Text("OSACAST").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        Text("OSACAST").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                         Text(bridge.code).font(.system(size: 24, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(4)
                         HStack(spacing: 5) {
                             Circle().fill(live ? .red : .white.opacity(0.4)).frame(width: 7, height: 7)
@@ -87,15 +87,15 @@ struct OsaCastView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
-                .foregroundColor(accent.opacity(0.5))
+                .foregroundColor(.white.opacity(0.2))
             if bridge.phase == .connecting {
                 VStack(spacing: 10) {
-                    ProgressView().controlSize(.small).tint(accent)
+                    ProgressView().controlSize(.small).tint(.white)
                     Text("Connexion…").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
                 }
             } else {
                 VStack(spacing: 12) {
-                    Text("REGARDER").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                    Text("REGARDER").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                     TextField("CODE", text: $entry)
                         .font(.system(size: 18, weight: .bold, design: .monospaced))
                         .multilineTextAlignment(.center)

@@ -61,8 +61,8 @@ struct OsaDropView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
-                .foregroundColor(dropActive ? accent : .white.opacity(0.2))
-                .background(dropActive ? accent.opacity(0.1) : Color.clear)
+                .foregroundColor(dropActive ? .white.opacity(0.45) : .white.opacity(0.2))
+                .background(dropActive ? Color.white.opacity(0.08) : Color.clear)
                 .cornerRadius(16)
             
             if let url = model.droppedURL {
@@ -145,12 +145,12 @@ struct OsaDropView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
-                    .foregroundColor(accent.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.2))
                 
                 if model.droppedURL != nil {
                     // Mode Envoi
                     VStack(spacing: 10) {
-                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                         if code.isEmpty {
                             Image(systemName: "paperplane.fill").font(.system(size: 24)).foregroundColor(.white)
                             Text("Générer").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
@@ -159,7 +159,7 @@ struct OsaDropView: View {
                             
                             if case .transferring(let p) = bridge.phase {
                                 Text("Envoi...").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
-                                ProgressView(value: p).progressViewStyle(.linear).tint(accent).frame(width: 80).padding(.top, 4)
+                                ProgressView(value: p).progressViewStyle(.linear).tint(.white).frame(width: 80).padding(.top, 4)
                             } else {
                                 Text("En attente").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
                             }
@@ -168,10 +168,10 @@ struct OsaDropView: View {
                 } else {
                     // Mode Réception
                     VStack(spacing: 12) {
-                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                         
                         if case .transferring(let p) = bridge.phase {
-                            ProgressView(value: p).progressViewStyle(.linear).tint(accent).frame(width: 80)
+                            ProgressView(value: p).progressViewStyle(.linear).tint(.white).frame(width: 80)
                             Text("Réception...").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
                         } else {
                             TextField("CODE", text: $entry)
@@ -216,7 +216,7 @@ struct OsaDropView: View {
                     bridge.reset(); entry = ""
                 } label: {
                     Text("Ouvrir").font(.system(size: 13, weight: .semibold)).foregroundColor(.black).frame(width: 100, height: 36)
-                        .background(RoundedRectangle(cornerRadius: 18).fill(accent))
+                        .background(RoundedRectangle(cornerRadius: 18).fill(.white))
                 }.buttonStyle(.plain)
             }.padding(.top, 8)
         }.padding(.top, 20).frame(height: 200)

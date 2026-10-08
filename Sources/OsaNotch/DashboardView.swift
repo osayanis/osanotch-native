@@ -52,11 +52,13 @@ struct DashboardView: View {
         return VStack(spacing: 3) {
             Text(weekdayLetter(d, isToday: isToday))
                 .font(.system(size: 9, weight: .medium))
-                .foregroundColor(isToday ? accent : .white.opacity(0.4))
+                .foregroundColor(isToday ? .white : .white.opacity(0.4))
             Text("\(cal.component(.day, from: d))")
                 .font(.system(size: 14, weight: isToday ? .bold : .medium))
-                .foregroundColor(isToday ? accent : .white.opacity(0.85))
-            Circle().fill(hasEvent ? accent : .clear).frame(width: 3, height: 3)
+                .foregroundColor(isToday ? .black : .white.opacity(0.85))
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(isToday ? Color.white : .clear))
+            Circle().fill(hasEvent ? .white.opacity(0.65) : .clear).frame(width: 3, height: 3)
         }
         .frame(width: 30)
     }
@@ -67,7 +69,7 @@ struct DashboardView: View {
                 Text(ev.title).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white)
                     .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 6)
-                Circle().fill(accent).frame(width: 5, height: 5)
+                Circle().fill(.white.opacity(0.65)).frame(width: 5, height: 5)
                 Text("\(timeStr(ev.start)) – \(timeStr(ev.end))").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundColor(.white.opacity(0.7))
             } else {
                 Text("Rien de prévu").font(.system(size: 12.5, weight: .medium)).foregroundColor(.white.opacity(0.45))
@@ -126,7 +128,7 @@ struct DashboardView: View {
                         GeometryReader { g in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(.white.opacity(0.14))
-                                Capsule().fill(accent).frame(width: max(0, g.size.width * prog))
+                                Capsule().fill(.white).frame(width: max(0, g.size.width * prog))
                             }
                         }.frame(height: 3)
                     }
@@ -218,7 +220,7 @@ struct CameraMirrorView: View {
                     ZStack {
                         Color.white.opacity(0.06)
                         VStack(spacing: 8) {
-                            Image(systemName: "camera.fill").font(.system(size: 24)).foregroundColor(accent)
+                            Image(systemName: "camera.fill").font(.system(size: 24)).foregroundColor(.white)
                             Text("Activer le miroir").font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.8))
                         }
                     }

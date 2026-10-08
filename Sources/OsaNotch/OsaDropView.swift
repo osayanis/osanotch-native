@@ -13,12 +13,11 @@ struct OsaDropView: View {
     @State private var fileName: String?
     @State private var entry: String = ""
     @State private var dropActive = false
-    @StateObject private var mpc = MPCManager()
+    @StateObject private var bridge = DropBridge()
 
     var mascotMood: Mood {
-        switch mpc.phase {
-        case .transferring: return .happy
-        case .done: return .happy
+        switch bridge.phase {
+        case .transferring, .done: return .happy
         default: return dropActive ? .happy : .idle
         }
     }
@@ -33,6 +32,7 @@ struct OsaDropView: View {
             }
             Spacer(minLength: 0)
         }
+        .background(HiddenWeb(webView: bridge.webView).frame(width: 1, height: 1).opacity(0.02))
     }
 
     var header: some View {
@@ -40,7 +40,7 @@ struct OsaDropView: View {
             Button {
                 switch mode {
                 case .choose: back()
-                case .send, .receive: mpc.reset(); mode = .choose
+                case .send, .receive: bridge.reset(); mode = .choose
                 }
             } label: {
                 Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8))
@@ -97,7 +97,7 @@ struct OsaDropView: View {
             .onDrop(of: [UTType.fileURL], isTargeted: $dropActive) { providers in
                 providers.first?.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
-                    DispatchQueue.main.async { fileName = url.lastPathComponent; mpc.send(file: url, code: code) }
+                    DispatchQueue.main.async { fileName = url.lastPathComponent; bridge.send(fileURL: url, code: code) }
                 }
                 return true
             }
@@ -119,7 +119,7 @@ struct OsaDropView: View {
                 .multilineTextAlignment(.center).foregroundColor(.white).tracking(6)
                 .frame(height: 56).background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
                 .onChange(of: entry) { _, v in entry = String(v.uppercased().prefix(6)) }
-            Button { mpc.receive(code: entry) } label: {
+            Button { bridge.receive(code: entry) } label: {
                 Text(entry.count == 6 ? "Se connecter" : "Code à 6 lettres").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(entry.count == 6 ? .black : .white.opacity(0.4)).frame(maxWidth: .infinity).padding(.vertical, 11)
                     .background(RoundedRectangle(cornerRadius: 13).fill(entry.count == 6 ? accent : .white.opacity(0.08)))
@@ -129,10 +129,11 @@ struct OsaDropView: View {
     }
 
     @ViewBuilder var statusRow: some View {
-        switch mpc.phase {
-        case .idle: EmptyView()
+        switch bridge.phase {
+        case .idle, .loading: EmptyView()
         case .waiting: label("En attente du correspondant…", accent)
         case .connecting: label("Connexion…", accent)
+        case .connected: label("Connecté", accent)
         case .transferring(let p): VStack(spacing: 4) { label("Transfert \(Int(p*100))%", accent); ProgressView(value: p).frame(width: 150).tint(accent) }
         case .done(let m): label(m, .green)
         case .failed: label("Échec — réessaie", .red)

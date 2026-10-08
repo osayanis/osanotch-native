@@ -7,6 +7,12 @@ import EventKit
 
 enum AppView { case home, notes, drop, cast, party, dashboard, choice, notification, onboarding }
 
+struct OsaNotif: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let date: Date
+}
+
 final class AppModel: ObservableObject {
     @Published var cursor: CGPoint = .zero
     @Published var expanded: Bool = false
@@ -19,8 +25,11 @@ final class AppModel: ObservableObject {
     @Published var screenW: CGFloat = 1440
     @Published var droppedURL: URL? = nil
     @Published var notification: String? = nil
+    @Published var notifications: [OsaNotif] = []
+    @Published var showNotifBanner: Bool = false
     @Published var dropHover: Bool = false
     @Published var isDragging: Bool = false
+    private var bannerTimer: Timer?
     
     let aiTracker = AITracker()
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
@@ -37,20 +46,31 @@ final class AppModel: ObservableObject {
         if !ax || !screen || !cam || !cal {
             self.view = .onboarding
         }
-        aiTracker.onFinish = { [weak self] msg in
-            self?.notification = msg
-            self?.view = .notification
-            self?.expanded = true
-        }
+        aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
+    }
+
+    // Fait apparaître une notification en bannière (sans survol), puis la stocke.
+    func pushNotif(_ text: String) {
+        notification = text
+        notifications.insert(OsaNotif(text: text, date: Date()), at: 0)
+        if notifications.count > 8 { notifications.removeLast(notifications.count - 8) }
+        view = .notification
+        showNotifBanner = true
+        bannerTimer?.invalidate()
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: false) { [weak self] _ in
+            self?.showNotifBanner = false
+        }
     }
 }
 
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
         if !expanded {
+            // Bannière de notification : descend sous l'encoche, visible sans survol.
+            if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
             if hud { return CGSize(width: notchW + 190, height: notchH + 30) }
             return CGSize(width: playing ? notchW + 120 : notchW, height: notchH)
@@ -64,7 +84,7 @@ enum Island {
         case .party:        return CGSize(width: 500, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 320)
         case .choice:       return CGSize(width: 380, height: 160)
-        case .notification: return CGSize(width: 320, height: 80)
+        case .notification: return CGSize(width: 470, height: 176)
         case .onboarding:   return CGSize(width: 480, height: 480)
         }
     }
@@ -149,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return e }
             let p = NSEvent.mouseLocation
             guard let sf = (self.panel.screen ?? NSScreen.main)?.frame else { return e }
-            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
+            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notifBanner: self.model.showNotifBanner, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
             let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
             
             if shapeRect.contains(p) {
@@ -184,15 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
-        localServer.onNotify = { [weak self] msg in
-            self?.model.notification = msg
-            self?.model.view = .notification
-            self?.model.expanded = true
-            // Cacher la notification après 3 secondes
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                if self?.model.view == .notification { self?.closeAll() }
-            }
-        }
+        localServer.onNotify = { [weak self] msg in self?.model.pushNotif(msg) }
         localServer.start()
     }
 
@@ -216,17 +228,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trigW: CGFloat = 300, trigH: CGFloat = 44
         let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
+
+        // Cas spécial notifications : la bannière reste visible sans survol ;
+        // au survol on déploie l'écran (mascotte à gauche + liste à droite).
+        if model.view == .notification {
+            let over = shapeRect.insetBy(dx: -16, dy: -16).contains(p)
+            if over {
+                model.expanded = true
+            } else if model.expanded {
+                // L'utilisateur a consulté puis quitté → retour accueil.
+                model.expanded = false
+                model.view = .home
+            } else if !model.showNotifBanner {
+                // Bannière expirée et pas de survol → retour accueil.
+                model.view = .home
+            }
+            model.dropHover = false
+            return
+        }
 
         if !model.expanded {
             if trigger.contains(p) { model.expanded = true }
         } else {
-            if !shapeRect.insetBy(dx: -16, dy: -16).contains(p) { 
-                model.expanded = false 
+            if !shapeRect.insetBy(dx: -16, dy: -16).contains(p) {
+                model.expanded = false
             }
         }
-        
+
         // Gérer le survol visuel du Drag & Drop
         model.dropHover = model.isDragging && shapeRect.contains(p)
     }

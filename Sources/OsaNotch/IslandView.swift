@@ -44,14 +44,16 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
 
     var body: some View {
         let exp = model.expanded
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 IslandShape(bottom: exp ? 28 : 12).fill(Color.black)
-                if exp { content.transition(.opacity) } else { collapsedView.transition(.opacity) }
+                if exp { content.transition(.opacity) }
+                else if model.view == .notification && model.showNotifBanner { notifBanner.transition(.opacity) }
+                else { collapsedView.transition(.opacity) }
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
             .frame(width: size.width, height: size.height)
@@ -65,6 +67,7 @@ struct IslandView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
+        .animation(.spring(response: 0.44, dampingFraction: 0.8), value: model.showNotifBanner)
         .ignoresSafeArea()
     }
 
@@ -74,7 +77,7 @@ struct IslandView: View {
         case .notes:        notesView
         case .dashboard:    DashboardView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
         case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
-        case .notification: NotificationView(model: model, accent: data.accent).frame(width: 340, height: size.height)
+        case .notification: notifCenterView.frame(width: size.width, height: size.height)
         case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.dropBridge).frame(width: 480, height: size.height)
         case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 520, height: size.height)
         case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 500, height: size.height)
@@ -83,6 +86,64 @@ struct IslandView: View {
     }
 
     var hudActive: Bool { model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD }
+
+    // Bannière de notification : apparaît sous l'encoche sans survol.
+    var notifBanner: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0).frame(height: model.notchH)
+            HStack(spacing: 11) {
+                OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Assistant IA").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                    Text(model.notification ?? "Tâche terminée").font(.system(size: 11)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 52)
+        }
+        .frame(width: 360, height: model.notchH + 52)
+    }
+
+    // Écran de notifications : mascotte à gauche, notifications récentes à droite.
+    var notifCenterView: some View {
+        HStack(spacing: 16) {
+            VStack {
+                OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 58)
+                Text("Assistant IA").font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+            }
+            .frame(width: 110)
+            .transition(.move(edge: .leading).combined(with: .opacity))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Notifications récentes").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                if model.notifications.isEmpty {
+                    Text("Rien pour le moment").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
+                } else {
+                    ForEach(model.notifications.prefix(3)) { n in
+                        HStack(alignment: .top, spacing: 9) {
+                            Circle().fill(data.accent).frame(width: 6, height: 6).padding(.top, 5)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(n.text).font(.system(size: 12.5, weight: .medium)).foregroundColor(.white).lineLimit(2)
+                                Text(relTime(n.date)).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.35))
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 14)
+    }
+
+    func relTime(_ d: Date) -> String {
+        let s = Int(Date().timeIntervalSince(d))
+        if s < 60 { return "à l'instant" }
+        if s < 3600 { return "il y a \(s / 60) min" }
+        return "il y a \(s / 3600) h"
+    }
 
     @ViewBuilder var collapsedView: some View {
         if hudActive { hudView }

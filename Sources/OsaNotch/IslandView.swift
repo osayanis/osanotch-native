@@ -64,6 +64,7 @@ struct IslandView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.viewHeight)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
+        .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
         .ignoresSafeArea()
     }
 
@@ -136,7 +137,11 @@ struct IslandView: View {
     var homeView: some View {
         VStack(spacing: 0) {
             TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
-            if playing && !model.dropHover { playerView } else { idleHome }
+            if playing && !model.dropHover {
+                playerView.transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                idleHome.transition(.opacity)
+            }
         }
         .frame(width: size.width, height: size.height)
     }

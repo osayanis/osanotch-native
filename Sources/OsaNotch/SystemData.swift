@@ -31,7 +31,7 @@ final class SystemData: ObservableObject {
 
     func start() {
         schedule(20) { [weak self] in self?.pollBattery() }
-        schedule(5)  { [weak self] in self?.pollMusic() }
+        schedule(2)  { [weak self] in self?.pollMusic() }
         schedule(60) { [weak self] in self?.pollAirpods() }
         schedule(300){ [weak self] in self?.pollCalendar() }
         schedule(60) { [weak self] in self?.pollServices() }
@@ -73,14 +73,16 @@ final class SystemData: ObservableObject {
             }
             let p = out.components(separatedBy: "||")
             guard p.count >= 6 else { return }
+            // AppleScript sort les décimales avec la virgule en locale FR → remplacer avant parsing.
+            func num(_ s: String) -> Double { Double(s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")) ?? 0 }
             var info = MusicInfo(playing: p[0] == "playing", title: p[1], artist: p[2], source: p[3],
-                                 artworkURL: nil, position: Double(p[4]) ?? 0, duration: Double(p[5]) ?? 0)
+                                 artworkURL: nil, position: num(p[4]), duration: num(p[5]))
             let key = "\(info.artist)|\(info.title)"
             DispatchQueue.main.async { self.music = info; self.positionSampledAt = Date() }
             if key != self.lastArtKey {
                 self.lastArtKey = key
+                DispatchQueue.main.async { self.lyrics = []; self.artwork = nil }
                 self.fetchArtwork(artist: info.artist, title: info.title)
-                DispatchQueue.main.async { self.lyrics = [] }
                 self.fetchLyrics(artist: info.artist, title: info.title, duration: info.duration)
             }
             _ = info
@@ -88,18 +90,37 @@ final class SystemData: ObservableObject {
     }
 
     private func fetchArtwork(artist: String, title: String) {
-        let term = "\(artist) \(title)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        guard let url = URL(string: "https://itunes.apple.com/search?term=\(term)&entity=song&limit=1") else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "" }
+        // Chaîne de repli : la recherche "artiste titre" exacte échoue souvent → essayer plus large.
+        let queries = [
+            "https://itunes.apple.com/search?term=\(enc("\(artist) \(title)"))&entity=song&limit=1",
+            "https://itunes.apple.com/search?term=\(enc(title))&entity=song&limit=1",
+            "https://itunes.apple.com/search?term=\(enc(artist))&entity=musicArtist&attribute=artistTerm&limit=1",
+            "https://itunes.apple.com/search?term=\(enc(artist))&entity=album&limit=1",
+        ]
+        let wantKey = "\(artist)|\(title)"
+
+        func artURL(_ data: Data?) -> String? {
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let results = json["results"] as? [[String: Any]],
-                  let art = results.first?["artworkUrl100"] as? String else { return }
-            let big = art.replacingOccurrences(of: "100x100bb", with: "400x400bb")
-            guard let iurl = URL(string: big), let img = NSImage(contentsOf: iurl) else { return }
-            let col = Self.vibrantColor(img)
-            DispatchQueue.main.async { self.artwork = img; if let col { self.accent = col } }
-        }.resume()
+                  let results = json["results"] as? [[String: Any]] else { return nil }
+            return results.first?["artworkUrl100"] as? String
+        }
+        func tryQuery(_ i: Int) {
+            guard i < queries.count, let url = URL(string: queries[i]) else { return }
+            URLSession.shared.dataTask(with: url) { data, _, _ in
+                guard self.lastArtKey == wantKey else { return }   // morceau changé entre-temps
+                guard let art = artURL(data) else { tryQuery(i + 1); return }
+                let big = art.replacingOccurrences(of: "100x100bb", with: "400x400bb")
+                guard let iurl = URL(string: big), let img = NSImage(contentsOf: iurl) else { tryQuery(i + 1); return }
+                let col = Self.vibrantColor(img)
+                DispatchQueue.main.async {
+                    guard self.lastArtKey == wantKey else { return }
+                    self.artwork = img; if let col { self.accent = col }
+                }
+            }.resume()
+        }
+        tryQuery(0)
     }
 
     // MARK: Paroles synchronisées (LRCLIB, gratuit, sans clé)

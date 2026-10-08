@@ -1,24 +1,43 @@
 #!/bin/bash
+# Publie une nouvelle version d'OsaNotch :
+#  - bump la version dans AutoUpdater.swift
+#  - build + zip (ditto)
+#  - déploie le canal de MAJ sur le VPS (OsaNotch.zip + latest.json) → notch.osalabs.fr
+#  - commit/push + release GitHub
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Demander la nouvelle version
-read -p "Nouvelle version (ex: 1.0.1) : " VERSION
+VPS="root@141.11.103.154"
+SITE="/var/www/osanotch-site"
 
-# Mettre à jour la version dans le code source (AutoUpdater.swift)
-sed -i '' "s/private let currentVersion = .*/private let currentVersion = \"$VERSION\"/" Sources/OsaNotch/AutoUpdater.swift
+read -p "Nouvelle version (ex: 1.0.1) : " V
+[ -z "$V" ] && { echo "version vide, abandon"; exit 1; }
 
-# Compiler
-echo "▶︎ Compilation..."
-./build.sh release
+echo "▶︎ bump version → $V"
+sed -i '' "s/private let currentVersion = .*/private let currentVersion = \"$V\"/" Sources/OsaNotch/AutoUpdater.swift
 
-# Zipper
-echo "▶︎ Création du .zip..."
+echo "▶︎ build"
+./build.sh
+
+echo "▶︎ zip"
 rm -f OsaNotch.zip
-zip -rq OsaNotch.zip OsaNotch.app
+ditto -c -k --sequesterRsrc --keepParent OsaNotch.app OsaNotch.zip
 
-# Créer la release GitHub
-echo "▶︎ Publication sur GitHub (v$VERSION)..."
-gh release create "v$VERSION" OsaNotch.zip --title "OsaNotch v$VERSION" --notes "Mise à jour automatique."
+echo "▶︎ latest.json"
+cat > latest.json <<EOF
+{ "version": "$V", "url": "https://notch.osalabs.fr/OsaNotch.zip", "notes": "OsaNotch $V" }
+EOF
 
-echo "✅ Publication réussie !"
+echo "▶︎ déploiement VPS (canal de mise à jour)"
+# le zip d'abord, le flux ensuite (les clients ne voient la MAJ qu'une fois le zip en place)
+rsync -az OsaNotch.zip "$VPS:$SITE/OsaNotch.zip"
+rsync -az latest.json  "$VPS:$SITE/latest.json"
+
+echo "▶︎ git + release GitHub"
+git add -A && git commit -m "release: v$V" || true
+git push || true
+if gh release create "v$V" OsaNotch.zip --repo osayanis/osanotch-native --title "OsaNotch $V" --notes "OsaNotch $V"; then :; else
+  gh release upload "v$V" OsaNotch.zip --clobber --repo osayanis/osanotch-native
+fi
+
+echo "✅ OsaNotch $V publiée — VPS (notch.osalabs.fr) + GitHub."

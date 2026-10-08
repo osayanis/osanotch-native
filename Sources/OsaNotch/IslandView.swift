@@ -72,8 +72,8 @@ struct IslandView: View {
         case .dashboard:    DashboardView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
         case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
         case .notification: NotificationView(model: model, accent: data.accent).frame(width: 340, height: size.height)
-        case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
-        case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 520, height: size.height)
+        case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.dropBridge).frame(width: 480, height: size.height)
+        case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 520, height: size.height)
         case .onboarding:   OnboardingView(model: model, accent: data.accent).frame(width: 480, height: size.height)
         }
     }

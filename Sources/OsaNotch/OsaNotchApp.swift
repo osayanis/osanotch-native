@@ -23,7 +23,10 @@ final class AppModel: ObservableObject {
     @Published var isDragging: Bool = false
     
     let aiTracker = AITracker()
-    
+    // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
+    let dropBridge = DropBridge()
+    let castBridge = CastBridge()
+
     init() {
         let ax = AXIsProcessTrusted()
         let screen = CGPreflightScreenCaptureAccess()

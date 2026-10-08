@@ -9,7 +9,7 @@ struct OsaCastView: View {
     enum Mode { case choose, hosting, joining }
     @State private var mode: Mode = .choose
     @State private var entry: String = ""
-    @StateObject private var bridge = CastBridge()
+    @ObservedObject var bridge: CastBridge
 
     var watching: Bool { mode == .joining && (bridge.phase == .connected || bridge.phase == .live) }
     var mascotMood: Mood { mode == .hosting ? .happy : .idle }
@@ -34,7 +34,13 @@ struct OsaCastView: View {
             .padding(watching ? 10 : 0)
             Spacer(minLength: 0)
         }
-        .onAppear { applyHeight() }
+        .onAppear {
+            applyHeight()
+            // Le notch vient d'être rouvert : si un cast était en cours, on relance la vidéo.
+            if bridge.phase == .connected || bridge.phase == .live {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { bridge.resume() }
+            }
+        }
         .onChange(of: mode) { _, _ in applyHeight() }
         .onChange(of: bridge.phase) { _, _ in applyHeight() }
     }

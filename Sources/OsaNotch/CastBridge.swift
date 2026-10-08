@@ -30,6 +30,8 @@ final class CastBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
     func host() { set(.waiting); run { self.webView.evaluateJavaScript("osaCast.host()", completionHandler: nil) } }
     func join(_ code: String) { set(.connecting); run { self.webView.evaluateJavaScript("osaCast.join(\(Self.js(code)))", completionHandler: nil) } }
     func stop() { webView.evaluateJavaScript("osaCast.stop()", completionHandler: nil); DispatchQueue.main.async { self.code = "" }; set(.idle); load() }
+    // Relance la lecture après un repli/dépli du notch (le WebView détaché peut mettre la vidéo en pause)
+    func resume() { webView.evaluateJavaScript("(function(){var v=document.getElementById('v'); if(v){v.muted=true; v.play().catch(function(){});}})()", completionHandler: nil) }
 
     private func run(_ b: @escaping () -> Void) { if ready { b() } else { pending = b } }
     private func set(_ p: Phase) { DispatchQueue.main.async { self.phase = p } }

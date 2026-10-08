@@ -7,27 +7,27 @@ final class AutoUpdater: ObservableObject {
     @Published var updateAvailable: String? = nil
     @Published var isUpdating: Bool = false
     
-    private let repo = "osayanis/osanotch-native"
+    // Flux de mise à jour hébergé sur le VPS (repo privé → pas d'API GitHub).
+    // latest.json : { "version": "1.0.1", "url": "https://notch.osalabs.fr/OsaNotch.zip" }
+    private let feedURL = "https://notch.osalabs.fr/latest.json"
     private var downloadUrl: URL? = nil
-    
-    // Version actuelle (définie dans le code pour simplifier, ou via Info.plist)
+
+    // Version actuelle (définie dans le code ; bumpée par publish.sh)
     private let currentVersion = "1.0.0"
-    
+
     func checkForUpdates() {
-        guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
+        guard let url = URL(string: feedURL) else { return }
         var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("OsaNotch Updater", forHTTPHeaderField: "User-Agent")
-        
+
         URLSession.shared.dataTask(with: req) { data, _, _ in
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String,
-                  let assets = json["assets"] as? [[String: Any]],
-                  let asset = assets.first(where: { ($0["name"] as? String)?.hasSuffix(".zip") == true }),
-                  let assetUrlStr = asset["browser_download_url"] as? String,
+                  let latestVersion = json["version"] as? String,
+                  let assetUrlStr = json["url"] as? String,
                   let assetUrl = URL(string: assetUrlStr) else { return }
-            
-            let latestVersion = tagName.replacingOccurrences(of: "v", with: "")
+
             if latestVersion != self.currentVersion {
                 DispatchQueue.main.async {
                     self.updateAvailable = latestVersion

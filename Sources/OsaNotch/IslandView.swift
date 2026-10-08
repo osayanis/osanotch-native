@@ -166,40 +166,41 @@ struct IslandView: View {
 
     // ── Lecteur musique : pochette à gauche, paroles + barre + contrôles à droite ──
     var playerView: some View {
-        HStack(alignment: .center, spacing: 16) {
-            artwork(120, 16)
-                .shadow(color: data.accent.opacity(0.5), radius: 14, y: 5)
+        HStack(alignment: .center, spacing: 14) {
+            artwork(92, 13)
+                .shadow(color: data.accent.opacity(0.5), radius: 11, y: 4)
             VStack(alignment: .leading, spacing: 0) {
-                Text(data.music?.title ?? "")
-                    .font(.system(size: 15.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
-                Text(data.music?.artist ?? "")
-                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
-                    .padding(.top, 1)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(data.music?.title ?? "")
+                        .font(.system(size: 13.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                    Text(data.music?.artist ?? "")
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
+                }
 
-                Spacer(minLength: 6)
+                Spacer(minLength: 4)
                 lyricsBlock
-                Spacer(minLength: 6)
+                Spacer(minLength: 4)
 
-                TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
-                    playerScrubber(now: ctx.date)
+                HStack(spacing: 12) {
+                    TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
+                        playerScrubber(now: ctx.date)
+                    }
+                    HStack(spacing: 16) {
+                        ctrl("backward.fill", 13) { SystemData.controlMusic("previous track") }
+                        Button { SystemData.controlMusic("playpause") } label: {
+                            ZStack {
+                                Circle().fill(.white).frame(width: 30, height: 30).shadow(color: data.accent.opacity(0.6), radius: 6, y: 1)
+                                Image(systemName: "pause.fill").font(.system(size: 12)).foregroundColor(.black)
+                            }
+                        }.buttonStyle(.plain)
+                        ctrl("forward.fill", 13) { SystemData.controlMusic("next track") }
+                    }
+                    .fixedSize()
                 }
-
-                HStack(spacing: 26) {
-                    ctrl("backward.fill", 15) { SystemData.controlMusic("previous track") }
-                    Button { SystemData.controlMusic("playpause") } label: {
-                        ZStack {
-                            Circle().fill(.white).frame(width: 40, height: 40).shadow(color: data.accent.opacity(0.7), radius: 9, y: 2)
-                            Image(systemName: "pause.fill").font(.system(size: 16)).foregroundColor(.black)
-                        }
-                    }.buttonStyle(.plain)
-                    ctrl("forward.fill", 15) { SystemData.controlMusic("next track") }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 16)
+        .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 12)
     }
 
     // Position lue + temps écoulé depuis la lecture → progression fluide entre deux sondages.
@@ -213,23 +214,33 @@ struct IslandView: View {
     @ViewBuilder var lyricsBlock: some View {
         if data.lyrics.isEmpty {
             // Pas de paroles trouvées : petit égaliseur discret pour ne pas laisser de vide.
-            HStack { Spacer(); Waveform(color: data.accent, active: true); Spacer() }
-                .frame(maxWidth: .infinity)
+            HStack { Waveform(color: data.accent, active: true); Spacer() }
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            TimelineView(.periodic(from: .now, by: 0.4)) { ctx in
+            TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
                 let idx = currentLyric(at: livePosition(ctx.date))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(idx >= 0 ? data.lyrics[idx].text : "♪ ♪ ♪")
-                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                        .lineLimit(1).truncationMode(.tail)
-                    Text(idx + 1 < data.lyrics.count ? data.lyrics[idx + 1].text : " ")
-                        .font(.system(size: 11.5)).foregroundColor(.white.opacity(0.32))
-                        .lineLimit(1).truncationMode(.tail)
+                // Style Apple Music : la ligne active glisse vers le haut, la suivante monte à sa place.
+                VStack(alignment: .leading, spacing: 2) {
+                    lyricLine(idx, active: true)
+                    lyricLine(idx + 1, active: false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .animation(.easeInOut(duration: 0.3), value: idx)
+                .animation(.spring(response: 0.5, dampingFraction: 0.82), value: idx)
             }
         }
+    }
+
+    @ViewBuilder func lyricLine(_ i: Int, active: Bool) -> some View {
+        let text = (i >= 0 && i < data.lyrics.count) ? data.lyrics[i].text : (active && i < 0 ? "♪" : " ")
+        Text(text)
+            .font(.system(size: active ? 15 : 11.5, weight: active ? .semibold : .regular))
+            .foregroundColor(.white.opacity(active ? 1 : 0.3))
+            .lineLimit(1).truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .id("\(active ? "a" : "b")-\(i)")
+            .transition(.asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .move(edge: .top).combined(with: .opacity)))
     }
 
     func currentLyric(at pos: Double) -> Int {

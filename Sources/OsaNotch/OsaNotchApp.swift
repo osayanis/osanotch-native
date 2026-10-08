@@ -56,7 +56,7 @@ enum Island {
         }
         _ = sw
         switch view {
-        case .home:         return playing ? CGSize(width: 580, height: 232) : CGSize(width: 480, height: 185)
+        case .home:         return playing ? CGSize(width: 560, height: 168) : CGSize(width: 480, height: 185)
         case .notes:        return CGSize(width: 440, height: 320)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)

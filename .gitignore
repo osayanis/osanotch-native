@@ -1,4 +1,10 @@
 .build/
-OsaNotch.app/
-dist/
 .DS_Store
+OsaNotch.app/
+OsaNotch.zip
+# brouillons jetables
+patch_*.swift
+test_*.swift
+rewrite_*.swift
+fix_*.swift
+fix_*.txt

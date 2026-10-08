@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
     let dropBridge = DropBridge()
     let castBridge = CastBridge()
+    let friendBridge = FriendBridge.shared
     lazy var partyBridge = PartyBridge(data: data)
 
     init() {
@@ -50,6 +51,8 @@ final class AppModel: ObservableObject {
         aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
         clipboard.start()
+        
+        AutoUpdater.shared.checkForUpdates()
     }
 
     // Fait apparaître une notification en bannière (sans survol), puis la stocke.

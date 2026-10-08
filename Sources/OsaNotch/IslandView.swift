@@ -33,6 +33,7 @@ struct Waveform: View {
 struct IslandView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var data: SystemData
+    @ObservedObject var updater = AutoUpdater.shared
 
     var playing: Bool { data.music?.playing ?? false }
     var lowBat: Bool { if let b = data.battery { return b.percent <= 15 && !b.charging } else { return false } }
@@ -69,6 +70,8 @@ struct IslandView: View {
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
         .animation(.spring(response: 0.44, dampingFraction: 0.8), value: model.showNotifBanner)
         .ignoresSafeArea()
+        .onAppear { generateGreeting() }
+        .onChange(of: friendBridge.myName) { _, _ in generateGreeting() }
     }
 
     @ViewBuilder var content: some View {
@@ -104,27 +107,49 @@ struct IslandView: View {
         .frame(width: 360, height: model.notchH + 52)
     }
 
-    // Écran de notifications : mascotte à gauche, notifications récentes à droite.
+    @ObservedObject var friendBridge = FriendBridge.shared
+    @State private var friendCodeInput = ""
+    @State private var greeting = "Salut !"
+    
+    private func generateGreeting() {
+        let name = friendBridge.myName.isEmpty ? "l'ami" : friendBridge.myName
+        let msgs = [
+            "Hey \(name) !",
+            "Salut \(name) !",
+            "Yo \(name) !",
+            "Bonjour \(name) 👋",
+            "Prêt \(name) ?",
+            "Coucou \(name)",
+            "En forme \(name) ?",
+            "Quoi de neuf \(name) ?",
+            "Au rapport \(name) 🫡",
+            "Toujours là \(name) !",
+            "Opérationnel \(name) ✨"
+        ]
+        greeting = msgs.randomElement()!
+    }
+
+    // Écran de notifications : mascotte à gauche, notifications récentes à droite + Amis.
     var notifCenterView: some View {
         HStack(spacing: 16) {
             VStack {
                 OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 58)
-                Text("Assistant IA").font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                Text("OsaLabs").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.6))
             }
-            .frame(width: 110)
+            .frame(width: 90)
             .transition(.move(edge: .leading).combined(with: .opacity))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Notifications récentes").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                Text("Dernières notifications").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
                 if model.notifications.isEmpty {
-                    Text("Rien pour le moment").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
+                    Text("Aucune activité").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
                 } else {
-                    ForEach(model.notifications.prefix(3)) { n in
+                    ForEach(model.notifications.prefix(2)) { n in
                         HStack(alignment: .top, spacing: 9) {
                             Circle().fill(data.accent).frame(width: 6, height: 6).padding(.top, 5)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(n.text).font(.system(size: 12.5, weight: .medium)).foregroundColor(.white).lineLimit(2)
-                                Text(relTime(n.date)).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.35))
+                                Text(n.text).font(.system(size: 12.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                                Text(relTime(n.date)).font(.system(size: 9.5, weight: .medium)).foregroundColor(.white.opacity(0.35))
                             }
                             Spacer()
                         }
@@ -133,6 +158,89 @@ struct IslandView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
+            
+            // Section Amis
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Amis").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
+                    Spacer()
+                    if !friendBridge.myName.isEmpty {
+                        Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.3))
+                    }
+                }
+                
+                if friendBridge.myName.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Ton nom...", text: $friendCodeInput)
+                            .textFieldStyle(.plain).font(.system(size: 11))
+                            .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                        Button("Configurer") {
+                            if !friendCodeInput.isEmpty { friendBridge.saveName(friendCodeInput); friendCodeInput = "" }
+                        }.buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
+                    }
+                } else {
+                    if !friendBridge.incomingRequests.isEmpty {
+                        let req = friendBridge.incomingRequests[0]
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(req.name) souhaite devenir ami").font(.system(size: 10)).foregroundColor(.white).lineLimit(2)
+                            HStack {
+                                Button("Accepter") {
+                                    friendBridge.addFriend(FriendBridge.Friend(name: req.name, code: req.code))
+                                    friendBridge.incomingRequests.removeFirst()
+                                }.buttonStyle(.plain).foregroundColor(.green).font(.system(size: 10, weight: .bold))
+                                Button("Refuser") {
+                                    friendBridge.incomingRequests.removeFirst()
+                                }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 10, weight: .bold))
+                            }
+                        }.padding(6).background(Color.white.opacity(0.1)).cornerRadius(6)
+                    } else if !friendBridge.incomingCast.isEmpty {
+                        let req = friendBridge.incomingCast[0]
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(req.friendName) veut cast").font(.system(size: 10)).foregroundColor(.white).lineLimit(2)
+                            HStack {
+                                Button("Rejoindre") {
+                                    model.castBridge.join(req.castCode)
+                                    model.view = .cast
+                                    friendBridge.incomingCast.removeFirst()
+                                }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 10, weight: .bold))
+                                Button("Refuser") {
+                                    friendBridge.incomingCast.removeFirst()
+                                }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 10, weight: .bold))
+                            }
+                        }.padding(6).background(Color.white.opacity(0.1)).cornerRadius(6)
+                    } else {
+                        HStack(spacing: 4) {
+                            TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
+                                .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                            Button {
+                                if !friendCodeInput.isEmpty { friendBridge.sendFriendRequest(to: friendCodeInput); friendCodeInput = "" }
+                            } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }.buttonStyle(.plain)
+                        }
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(friendBridge.friends, id: \.code) { f in
+                                    HStack {
+                                        Text(f.name).font(.system(size: 11)).foregroundColor(.white)
+                                        Spacer()
+                                        Button {
+                                            // Lancer une demande de Cast
+                                            model.castBridge.host()
+                                            model.view = .cast
+                                            // On attend que le code soit généré
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                                if !model.castBridge.code.isEmpty {
+                                                    friendBridge.sendCastRequest(to: f.code, castCode: model.castBridge.code)
+                                                }
+                                            }
+                                        } label: { Image(systemName: "play.display").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(width: 130, alignment: .topLeading)
         }
         .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 14)
     }
@@ -215,7 +323,7 @@ struct IslandView: View {
                 HStack(spacing: 16) {
                     VStack(spacing: -2) {
                         OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54)
-                        Text("OsaLabs").font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                        Text(greeting).font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
                     }
                     .frame(width: 80)
                     .transition(.move(edge: .leading).combined(with: .opacity))
@@ -234,19 +342,146 @@ struct IslandView: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    
+                    // Section Amis
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Amis").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
+                            Spacer()
+                            if !friendBridge.myName.isEmpty {
+                                Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.3))
+                            }
+                        }
+                        
+                        if friendBridge.myName.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Ton nom...", text: $friendCodeInput)
+                                    .textFieldStyle(.plain).font(.system(size: 11))
+                                    .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                                Button("Configurer") {
+                                    if !friendCodeInput.isEmpty { friendBridge.saveName(friendCodeInput); friendCodeInput = "" }
+                                }.buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
+                            }
+                        } else {
+                            if !friendBridge.incomingRequests.isEmpty {
+                                let req = friendBridge.incomingRequests[0]
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(req.name) souhaite devenir ami").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
+                                    HStack {
+                                        Button("Accepter") {
+                                            friendBridge.addFriend(FriendBridge.Friend(name: req.name, code: req.code))
+                                            friendBridge.incomingRequests.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(.green).font(.system(size: 9, weight: .bold))
+                                        Button("Refuser") {
+                                            friendBridge.incomingRequests.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
+                                    }
+                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                            } else if !friendBridge.incomingCast.isEmpty {
+                                let req = friendBridge.incomingCast[0]
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(req.friendName) veut cast").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
+                                    HStack {
+                                        Button("Rejoindre") {
+                                            model.castBridge.join(req.castCode)
+                                            model.view = .cast
+                                            friendBridge.incomingCast.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 9, weight: .bold))
+                                        Button("Refuser") {
+                                            friendBridge.incomingCast.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
+                                    }
+                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                            } else if !friendBridge.incomingParty.isEmpty {
+                                let req = friendBridge.incomingParty[0]
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(req.friendName) lance une Party").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
+                                    HStack {
+                                        Button("Écouter") {
+                                            model.partyBridge.join(req.partyCode)
+                                            model.view = .party
+                                            friendBridge.incomingParty.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 9, weight: .bold))
+                                        Button("Refuser") {
+                                            friendBridge.incomingParty.removeFirst()
+                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
+                                    }
+                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                            } else {
+                                HStack(spacing: 4) {
+                                    TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
+                                        .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                                    Button {
+                                        if !friendCodeInput.isEmpty { friendBridge.sendFriendRequest(to: friendCodeInput); friendCodeInput = "" }
+                                    } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }.buttonStyle(.plain)
+                                }
+                                ScrollView(.vertical, showsIndicators: false) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ForEach(friendBridge.friends, id: \.code) { f in
+                                            HStack {
+                                                Text(f.name).font(.system(size: 11)).foregroundColor(.white)
+                                                Spacer()
+                                                HStack(spacing: 8) {
+                                                    Button {
+                                                        model.partyBridge.host()
+                                                        model.view = .party
+                                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                                            if !model.partyBridge.code.isEmpty {
+                                                                friendBridge.sendPartyRequest(to: f.code, partyCode: model.partyBridge.code)
+                                                            }
+                                                        }
+                                                    } label: { Image(systemName: "music.note").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
+                                                    
+                                                    Button {
+                                                        model.castBridge.host()
+                                                        model.view = .cast
+                                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                                            if !model.castBridge.code.isEmpty {
+                                                                friendBridge.sendCastRequest(to: f.code, castCode: model.castBridge.code)
+                                                            }
+                                                        }
+                                                    } label: { Image(systemName: "play.display").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: 120, alignment: .topLeading)
                 }
                 .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 4)
             } else {
                 OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
                     .padding(.top, 4)
                     .padding(.bottom, -2)
-                Text(model.dropHover ? "Dépose ton fichier" : "Salut Yanis")
+                Text(model.dropHover ? "Dépose ton fichier" : "OsaLabs")
                     .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
-                Text("OsaLabs")
+                Text(greeting)
                     .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
             }
             
             Spacer(minLength: 4)
+            if let newVer = updater.updateAvailable {
+                HStack {
+                    Text("Une mise à jour (v\(newVer)) est disponible !")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button(updater.isUpdating ? "Installation..." : "Mettre à jour") {
+                        updater.installUpdate()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(data.accent)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(data.accent.opacity(0.15))
+                    .cornerRadius(6)
+                }
+                .padding(.horizontal, 22).padding(.bottom, 6)
+            }
+            
             HStack(spacing: 8) {
                 appTile("Party", "music.note", data.services.party) { model.view = .party }
                 appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }

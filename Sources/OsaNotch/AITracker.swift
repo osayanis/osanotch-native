@@ -30,7 +30,7 @@ class AITracker: ObservableObject {
         guard AXIsProcessTrusted() else { return }
         
         let browsers = ["com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "com.brave.Browser", "com.microsoft.edgemac"]
-        let terminals = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable"]
+        let terminals = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u7i", "com.cursor.mac"]
         let aiApps: [String: String] = [
             "com.google.antigravity": "Antigravity",
             "com.google.GeminiMacOS": "Gemini",
@@ -62,6 +62,13 @@ class AITracker: ObservableObject {
             
             if let name = aiApps[bundleId] {
                 detectingAI = name
+                if name == "Antigravity" {
+                    if let agyTask = getAntigravityTask() {
+                        newlyGeneratingAI = "Antigravity"
+                        newlyFoundTask = agyTask
+                        break
+                    }
+                }
             } else if isBrowser {
                 if title.contains("Claude") { detectingAI = "Claude" }
                 else if title.contains("Gemini") { detectingAI = "Gemini" }
@@ -128,8 +135,54 @@ class AITracker: ObservableObject {
         "generating", "thinking", "esc to interrupt", "interrupt", "cancel generation",
         "arrêter la génération", "répond", "is working", "running…", "en cours d'exécution",
         "claude is thinking", "agent is thinking", "running task", "[thought]", "tool call",
-        "tool is running", "task id"
+        "tool is running", "task id",
+        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", // Spinners CLI
+        "analyzing", "searching", "checking", "reading", "patching", "creating", "building", // Antigravity toolActions
+        "call:" // Antigravity tool call syntax
     ]
+
+        private func getAntigravityTask() -> String? {
+        let fm = FileManager.default
+        let brainURL = fm.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/antigravity/brain")
+        guard let enumerator = fm.enumerator(at: brainURL, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return nil }
+        
+        var latestFile: URL?
+        var latestDate = Date.distantPast
+        
+        for case let fileURL as URL in enumerator {
+            if fileURL.lastPathComponent == "transcript.jsonl" {
+                if let attr = try? fm.attributesOfItem(atPath: fileURL.path),
+                   let modDate = attr[.modificationDate] as? Date {
+                    if modDate > latestDate {
+                        latestDate = modDate
+                        latestFile = fileURL
+                    }
+                }
+            }
+        }
+        
+        guard let file = latestFile, let data = try? Data(contentsOf: file) else { return nil }
+        let str = String(decoding: data, as: UTF8.self)
+        let lines = str.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        for line in lines.reversed().prefix(20) {
+            if let range = line.range(of: "\"toolAction\":\"\\\"") {
+                let rest = line[range.upperBound...]
+                if let endRange = rest.range(of: "\\\"\"") {
+                    var action = String(rest[..<endRange.lowerBound])
+                    if action.count > 40 { action = String(action.prefix(37)) + "..." }
+                    return "※ " + action
+                }
+            } else if let range = line.range(of: "\"toolAction\":\"") {
+                let rest = line[range.upperBound...]
+                if let endRange = rest.range(of: "\"") {
+                    var action = String(rest[..<endRange.lowerBound])
+                    if action.count > 40 { action = String(action.prefix(37)) + "..." }
+                    return "※ " + action
+                }
+            }
+        }
+        return nil
+    }
 
     private func scanForGenerating(_ axWindow: AXUIElement) -> String? {
         var foundTask: String? = nil

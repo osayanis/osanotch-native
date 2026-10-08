@@ -14,16 +14,19 @@ final class AppModel: ObservableObject {
 
 enum Island {
     static let collapsedH: CGFloat = 34
-    static let winH: CGFloat = 560
+    static let winW: CGFloat = 600
+    static let winH: CGFloat = 460
     static func collapsedW(_ playing: Bool) -> CGFloat { playing ? 300 : 186 }
-    static func homeH() -> CGFloat { 140 }
-    static func viewH(_ v: AppView) -> CGFloat {
-        switch v { case .home: return homeH(); case .notes: return 300; case .drop: return 520; case .cast: return 540 }
-    }
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, full: CGFloat) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool) -> CGSize {
         if !expanded { return CGSize(width: collapsedW(playing), height: collapsedH) }
-        return CGSize(width: full, height: viewH(view))   // pleine largeur → englobe tout
+        switch view {
+        case .home:  return CGSize(width: 480, height: 210)
+        case .notes: return CGSize(width: 440, height: 300)
+        case .drop:  return CGSize(width: 460, height: 340)
+        case .cast:  return CGSize(width: 520, height: 360)
+        }
     }
+    static func homeRect(_ sf: CGRect) -> CGRect { CGRect(x: sf.midX - 240, y: sf.maxY - 210, width: 480, height: 210) }
 }
 
 final class IslandPanel: NSPanel {
@@ -45,13 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let screen = NSScreen.main ?? NSScreen.screens.first!
         let sf = screen.frame
         model.screenW = sf.width
-        let frame = NSRect(x: sf.minX, y: sf.maxY - Island.winH, width: sf.width, height: Island.winH)
+        let frame = NSRect(x: sf.midX - Island.winW / 2, y: sf.maxY - Island.winH, width: Island.winW, height: Island.winH)
 
         panel = IslandPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel())) // AU-DESSUS de la barre de menus
+        panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -60,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.ignoresMouseEvents = true
 
         let host = NSHostingView(rootView: IslandView(model: model, data: model.data))
-        host.frame = NSRect(x: 0, y: 0, width: sf.width, height: Island.winH)
+        host.frame = NSRect(x: 0, y: 0, width: Island.winW, height: Island.winH)
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
         panel.setFrame(frame, display: true)
@@ -82,14 +85,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !model.expanded {
             if trigger.contains(p) { model.expanded = true }
         } else if model.view == .home {
-            let homeRect = CGRect(x: sf.minX, y: sf.maxY - Island.homeH(), width: sf.width, height: Island.homeH())
-            if !homeRect.insetBy(dx: 0, dy: -8).contains(p) { model.expanded = false }
+            if !Island.homeRect(sf).insetBy(dx: -8, dy: -8).contains(p) { model.expanded = false }
         }
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, full: sf.width)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
         panel.ignoresMouseEvents = !shapeRect.contains(p)
 
-        if model.expanded && model.view == .notes && !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
+        if model.expanded && model.view != .home && !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
     }
 }

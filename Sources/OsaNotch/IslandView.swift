@@ -45,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, full: model.screenW) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing) }
 
     var body: some View {
         let exp = model.expanded
@@ -53,11 +53,11 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 IslandShape(bottom: exp ? 28 : 12).fill(Color.black)
                 if exp { content.transition(.opacity) } else { collapsedView.transition(.opacity) }
-                if dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
+                if dropHover && model.view == .home { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
             .frame(width: size.width, height: size.height)
             .clipShape(IslandShape(bottom: exp ? 28 : 12))
-            .onDrop(of: [UTType.fileURL], isTargeted: $dropHover) { handleDrop($0) }
+            .onDrop(of: [UTType.fileURL], isTargeted: $dropHover) { handleAirDrop($0) }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -68,10 +68,10 @@ struct IslandView: View {
 
     @ViewBuilder var content: some View {
         switch model.view {
-        case .home:  homeBar
+        case .home:  homeView
         case .notes: notesView
-        case .drop:  webView("https://osadrop.osalabs.fr", "OsaDrop")
-        case .cast:  webView("https://osacast.osalabs.fr", "OsaCast")
+        case .drop:  OsaDropView(accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
+        case .cast:  OsaCastView(accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
         }
     }
 
@@ -84,36 +84,34 @@ struct IslandView: View {
         .frame(width: Island.collapsedW(playing), height: Island.collapsedH)
     }
 
-    // ── Home : barre horizontale pleine largeur ──
-    var homeBar: some View {
-        HStack(spacing: 20) {
-            VStack(spacing: 12) { tbButton("house.fill", .home); tbButton("note.text", .notes) }
-            OsaCharacter(model: model, mood: mood, accent: data.accent, size: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(dropHover ? "Dépose ton fichier" : (playing ? (data.music?.title ?? "") : "Salut Yanis"))
-                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-                Text(dropHover ? "pour AirDrop" : (playing ? (data.music?.artist ?? "") : "OsaLabs"))
-                    .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
-            }.frame(width: 150, alignment: .leading)
+    // ── Home centré ──
+    var homeView: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                tbButton("house.fill", .home); tbButton("note.text", .notes)
+                Spacer()
+                if dropHover { Text("Lâcher pour AirDrop").font(.system(size: 10, weight: .semibold)).foregroundColor(data.accent) }
+                batteryBadge
+            }.padding(.horizontal, 18).padding(.top, 11)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 2)
+            OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
+            Text(dropHover ? "Dépose ton fichier" : (playing ? (data.music?.title ?? "") : "Salut Yanis"))
+                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
+            Text(playing && !dropHover ? (data.music?.artist ?? "") : "OsaLabs")
+                .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
+            Spacer(minLength: 6)
 
             if playing {
-                HStack(spacing: 14) {
-                    artwork(46, 11)
-                    VStack(alignment: .leading, spacing: 5) {
-                        scrubber.frame(width: 190)
-                        Waveform(color: data.accent, active: true)
-                    }
-                    HStack(spacing: 16) {
-                        ctrl("backward.fill", 14) { SystemData.controlMusic("previous track") }
-                        Button { SystemData.controlMusic("playpause") } label: {
-                            ZStack { Circle().fill(.white).frame(width: 34, height: 34).shadow(color: data.accent.opacity(0.7), radius: 7, y: 2)
-                                Image(systemName: "pause.fill").font(.system(size: 14)).foregroundColor(.black) }
-                        }.buttonStyle(.plain)
-                        ctrl("forward.fill", 14) { SystemData.controlMusic("next track") }
-                    }
-                }
+                scrubber.padding(.horizontal, 44)
+                HStack(spacing: 32) {
+                    ctrl("backward.fill", 16) { SystemData.controlMusic("previous track") }
+                    Button { SystemData.controlMusic("playpause") } label: {
+                        ZStack { Circle().fill(.white).frame(width: 38, height: 38).shadow(color: data.accent.opacity(0.7), radius: 8, y: 2)
+                            Image(systemName: "pause.fill").font(.system(size: 15)).foregroundColor(.black) }
+                    }.buttonStyle(.plain)
+                    ctrl("forward.fill", 16) { SystemData.controlMusic("next track") }
+                }.padding(.top, 8)
                 Spacer(minLength: 8)
             }
 
@@ -121,10 +119,8 @@ struct IslandView: View {
                 appTile("Party", "music.note", data.services.party) { NSWorkspace.shared.open(URL(string: "https://osaparty.osalabs.fr")!) }
                 appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }
                 appTile("Cast", "play.rectangle.fill", data.services.cast) { model.view = .cast }
-            }
-            batteryBadge
+            }.padding(.horizontal, 16).padding(.bottom, 14)
         }
-        .padding(.horizontal, 36)
         .frame(width: size.width, height: size.height)
     }
 
@@ -134,15 +130,7 @@ struct IslandView: View {
             TextEditor(text: $notes).font(.system(size: 13)).scrollContentBackground(.hidden)
                 .foregroundColor(.white).padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
-                .frame(maxWidth: 640).padding(.horizontal, 24).padding(.bottom, 18)
-        }.frame(width: size.width, height: size.height)
-    }
-
-    func webView(_ url: String, _ title: String) -> some View {
-        VStack(spacing: 0) {
-            viewHeader(title, title == "OsaDrop" ? "paperplane.fill" : "play.rectangle.fill")
-            WebPane(url: URL(string: url)!).clipShape(RoundedRectangle(cornerRadius: 14))
-                .frame(maxWidth: 900).padding(.horizontal, 20).padding(.bottom, 16)
+                .padding(.horizontal, 20).padding(.bottom, 16)
         }.frame(width: size.width, height: size.height)
     }
 
@@ -152,35 +140,30 @@ struct IslandView: View {
             Image(systemName: icon).font(.system(size: 12)).foregroundColor(data.accent)
             Text(title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
             Spacer(); batteryBadge
-        }.frame(maxWidth: 900).padding(.horizontal, 24).padding(.top, 11).padding(.bottom, 8)
+        }.padding(.horizontal, 16).padding(.top, 11).padding(.bottom, 8)
     }
 
     func tbButton(_ icon: String, _ target: AppView) -> some View {
-        Button { model.view = target } label: {
-            Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.4))
-        }.buttonStyle(.plain)
+        Button { model.view = target } label: { Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.4)) }.buttonStyle(.plain)
     }
 
     @ViewBuilder func artwork(_ s: CGFloat, _ radius: CGFloat) -> some View {
         if let a = data.artwork { Image(nsImage: a).resizable().frame(width: s, height: s).clipShape(RoundedRectangle(cornerRadius: radius)) }
-        else { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.08)).frame(width: s, height: s).overlay(Image(systemName: "music.note").font(.system(size: s*0.4)).foregroundColor(.white.opacity(0.35))) }
+        else { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.08)).frame(width: s, height: s) }
     }
 
     var scrubber: some View {
         let dur = data.music?.duration ?? 0, pos = data.music?.position ?? 0
         let prog = dur > 0 ? min(1, pos / dur) : 0
-        return GeometryReader { g in
-            ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * prog)) }
-        }.frame(height: 3)
+        return GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * prog)) } }.frame(height: 3)
     }
 
     var batteryBadge: some View {
         Group {
             if let b = data.battery {
-                HStack(spacing: 2) {
-                    if b.charging { Image(systemName: "bolt.fill").font(.system(size: 9)) }
-                    Text("\(b.percent)%").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                }.foregroundColor(b.charging ? .green : (lowBat ? .red : .white.opacity(0.55)))
+                HStack(spacing: 2) { if b.charging { Image(systemName: "bolt.fill").font(.system(size: 9)) }
+                    Text("\(b.percent)%").font(.system(size: 11, weight: .semibold)).monospacedDigit() }
+                    .foregroundColor(b.charging ? .green : (lowBat ? .red : .white.opacity(0.5)))
             }
         }
     }
@@ -195,13 +178,13 @@ struct IslandView: View {
                 Image(systemName: icon).font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
                 Text(label).font(.system(size: 10.5, weight: .medium)).foregroundColor(.white.opacity(0.65))
                 Circle().fill(online ? .green : Color.white.opacity(0.2)).frame(width: 4, height: 4)
-            }.padding(.horizontal, 12).padding(.vertical, 8)
+            }.frame(maxWidth: .infinity).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 11).fill(.white.opacity(0.06)))
         }.buttonStyle(.plain)
     }
 
-    func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let p = providers.first else { return false }
+    func handleAirDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard model.view == .home, let p = providers.first else { return false }
         _ = p.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async {

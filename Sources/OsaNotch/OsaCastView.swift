@@ -65,6 +65,13 @@ struct OsaCastView: View {
                         if bridge.phase == .error {
                             Text("Capture refusée").font(.system(size: 9.5)).foregroundColor(.red)
                         }
+                        
+                        Button {
+                            bridge.stop()
+                            model.view = .home
+                        } label: {
+                            Text("Arrêter").font(.system(size: 10, weight: .semibold)).padding(.horizontal, 10).padding(.vertical, 4).background(Color.white.opacity(0.1)).cornerRadius(8).foregroundColor(.red)
+                        }.buttonStyle(.plain).padding(.top, 4)
                     }
                 } else {
                     VStack(spacing: 12) {

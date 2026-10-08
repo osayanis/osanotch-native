@@ -27,7 +27,36 @@ final class CastBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
 
     private func load() { ready = false; webView.load(URLRequest(url: URL(string: "https://osacast.osalabs.fr/osanotch-cast-bridge.html")!)) }
 
-    func host() { set(.waiting); run { self.webView.evaluateJavaScript("osaCast.host()", completionHandler: nil) } }
+    func host() {
+        set(.waiting)
+        let js = """
+        osaCast.host = async function() {
+            role = "host";
+            try {
+                window.localStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            } catch (e) {
+                window.webkit.messageHandlers.osaCast.postMessage({ type: "error", msg: "capture écran refusée" });
+                return;
+            }
+            newSocket();
+            socket.on("connect", () => socket.emit("createRoom"));
+            socket.on("roomCreated", (id) => { roomId = id; window.webkit.messageHandlers.osaCast.postMessage({ type: "code", code: id, phase: "waiting" }); });
+            socket.on("ready", async () => {
+                try {
+                    commonPC();
+                    window.localStream.getTracks().forEach((t) => pc.addTrack(t, window.localStream));
+                    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+                    socket.emit("offer", { roomId, offer });
+                    window.webkit.messageHandlers.osaCast.postMessage({ type: "status", phase: "live" });
+                } catch (e) { window.webkit.messageHandlers.osaCast.postMessage({ type: "error", msg: "erreur webrtc" }); }
+            });
+            socket.on("answer", async (a) => { try { await pc.setRemoteDescription(a); } catch (e) {} });
+            socket.on("ice-candidate", async (c) => { try { await pc.addIceCandidate(c); } catch (e) {} });
+        };
+        osaCast.host();
+        """
+        run { self.webView.evaluateJavaScript(js, completionHandler: nil) }
+    }
     func join(_ code: String) { set(.connecting); run { self.webView.evaluateJavaScript("osaCast.join(\(Self.js(code)))", completionHandler: nil) } }
     func stop() { webView.evaluateJavaScript("osaCast.stop()", completionHandler: nil); DispatchQueue.main.async { self.code = "" }; set(.idle); load() }
     // Relance la lecture après un repli/dépli du notch (le WebView détaché peut mettre la vidéo en pause)

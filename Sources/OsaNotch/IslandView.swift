@@ -33,7 +33,6 @@ struct Waveform: View {
 struct IslandView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var data: SystemData
-    @AppStorage("osa.notes") private var notes: String = ""
 
     var playing: Bool { data.music?.playing ?? false }
     var lowBat: Bool { if let b = data.battery { return b.percent <= 15 && !b.charging } else { return false } }
@@ -56,6 +55,7 @@ struct IslandView: View {
                 else { collapsedView.transition(.opacity) }
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
+            .opacity(!exp && !hudActive && !playing && !model.showNotifBanner && !model.dropHover ? 0 : 1)
             .frame(width: size.width, height: size.height)
             .clipShape(IslandShape(bottom: exp ? 28 : 12))
             Spacer(minLength: 0)
@@ -74,7 +74,6 @@ struct IslandView: View {
     @ViewBuilder var content: some View {
         switch model.view {
         case .home:         homeView
-        case .notes:        notesView
         case .dashboard:    DashboardView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
         case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
         case .notification: notifCenterView.frame(width: size.width, height: size.height)
@@ -212,18 +211,20 @@ struct IslandView: View {
     // Accueil au repos : mascotte + raccourcis.
     var idleHome: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 2)
             OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
+                .padding(.top, 4) // Reduced top spacing
+                .padding(.bottom, -2) // Pull text closer
             Text(model.dropHover ? "Dépose ton fichier" : "Salut Yanis")
                 .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
             Text("OsaLabs")
                 .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
-            Spacer(minLength: 6)
+            Spacer(minLength: 4) // Reduced spacing
             HStack(spacing: 8) {
-                appTile("Party", "music.note", data.services.party) { NSWorkspace.shared.open(URL(string: "https://osaparty.osalabs.fr")!) }
+                // Now truly integrated, opening the native party view instead of redirecting!
+                appTile("Party", "music.note", data.services.party) { model.view = .party }
                 appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }
                 appTile("Cast", "play.rectangle.fill", data.services.cast) { model.view = .cast }
-            }.padding(.horizontal, 16).padding(.bottom, 14)
+            }.padding(.horizontal, 16).padding(.bottom, 8) // Reduced bottom spacing
         }
     }
 
@@ -336,15 +337,6 @@ struct IslandView: View {
         }
     }
 
-    var notesView: some View {
-        VStack(spacing: 0) {
-            TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
-            TextEditor(text: $notes).font(.system(size: 13)).scrollContentBackground(.hidden)
-                .foregroundColor(.white).padding(10)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
-                .padding(.horizontal, 20).padding(.bottom, 16)
-        }.frame(width: size.width, height: size.height)
-    }
 
     @ViewBuilder func artwork(_ s: CGFloat, _ radius: CGFloat) -> some View {
         if let a = data.artwork { Image(nsImage: a).resizable().frame(width: s, height: s).clipShape(RoundedRectangle(cornerRadius: radius)) }

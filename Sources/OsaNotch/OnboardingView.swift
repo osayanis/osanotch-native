@@ -92,19 +92,31 @@ struct OnboardingView: View {
             
             Spacer(minLength: 0)
             
-            Button {
-                if allGranted {
-                    model.view = .home
+            VStack(spacing: 8) {
+                Button {
+                    if allGranted {
+                        model.view = .home
+                    }
+                } label: {
+                    Text("Commencer")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(allGranted ? .black : .white.opacity(0.3))
+                        .frame(width: 160, height: 40)
+                        .background(RoundedRectangle(cornerRadius: 20).fill(allGranted ? accent : Color.white.opacity(0.1)))
                 }
-            } label: {
-                Text("Commencer")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(allGranted ? .black : .white.opacity(0.3))
-                    .frame(width: 160, height: 40)
-                    .background(RoundedRectangle(cornerRadius: 20).fill(allGranted ? accent : Color.white.opacity(0.1)))
+                .buttonStyle(.plain)
+                .disabled(!allGranted)
+                
+                Button {
+                    model.view = .home
+                } label: {
+                    Text("Passer (si bug macOS)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.3))
+                        .underline()
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .disabled(!allGranted)
             .padding(.bottom, 24)
         }
         .onAppear {

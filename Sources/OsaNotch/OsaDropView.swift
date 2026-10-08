@@ -25,14 +25,50 @@ struct OsaDropView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            switch mode {
-            case .choose:  chooseView
-            case .send:    sendView
-            case .receive: receiveView
+            if bridge.lastReceivedURL != nil {
+                receivedView
+            } else {
+                switch mode {
+                case .choose:  chooseView
+                case .send:    sendView
+                case .receive: receiveView
+                }
             }
             Spacer(minLength: 0)
         }
         .background(HiddenWeb(webView: bridge.webView).frame(width: 1, height: 1).opacity(0.02))
+        .onAppear { applyHeight() }
+        .onChange(of: mode) { _, _ in applyHeight() }
+        .onChange(of: bridge.lastReceivedURL) { _, _ in applyHeight() }
+    }
+
+    func heightFor() -> CGFloat {
+        if bridge.lastReceivedURL != nil { return 214 }
+        switch mode { case .choose: return 176; case .send: return 300; case .receive: return 244 }
+    }
+    func applyHeight() { withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = heightFor() } }
+
+    var receivedView: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().fill(.green.opacity(0.15)).frame(width: 60, height: 60)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 42)).foregroundColor(.green)
+            }.padding(.top, 2)
+            Text("Fichier reçu").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+            Text(bridge.lastReceivedURL?.lastPathComponent ?? "").font(.system(size: 11)).foregroundColor(.white.opacity(0.5)).lineLimit(1).padding(.horizontal, 20)
+            HStack(spacing: 10) {
+                actionBtn("Ouvrir", "folder.fill") { if let u = bridge.lastReceivedURL { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
+                actionBtn("Nouveau", "arrow.down.circle.fill") { bridge.reset(); mode = .receive }
+            }.padding(.top, 2)
+        }.padding(.horizontal, 22).padding(.top, 4)
+    }
+
+    func actionBtn(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) { Image(systemName: icon).font(.system(size: 12)); Text(title).font(.system(size: 12, weight: .semibold)) }
+                .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.08)))
+        }.buttonStyle(.plain)
     }
 
     var header: some View {

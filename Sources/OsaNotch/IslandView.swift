@@ -45,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight) }
 
     var body: some View {
         let exp = model.expanded
@@ -63,6 +63,7 @@ struct IslandView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.4, dampingFraction: 0.82), value: model.expanded)
         .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.view)
+        .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.viewHeight)
         .ignoresSafeArea()
     }
 

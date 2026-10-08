@@ -34,18 +34,17 @@ struct IslandView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var data: SystemData
     @AppStorage("osa.notes") private var notes: String = ""
-    @State private var dropHover = false
 
     var playing: Bool { data.music?.playing ?? false }
     var lowBat: Bool { if let b = data.battery { return b.percent <= 15 && !b.charging } else { return false } }
     var mood: Mood {
         if !model.expanded { return .sleeping }
-        if dropHover { return .happy }
+        if model.dropHover { return .happy }
         if lowBat { return .worried }
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, volHUD: model.sysObs.showVolumeHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
 
     var body: some View {
         let exp = model.expanded
@@ -53,11 +52,10 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 IslandShape(bottom: exp ? 28 : 12).fill(Color.black)
                 if exp { content.transition(.opacity) } else { collapsedView.transition(.opacity) }
-                if dropHover && model.view == .home { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
+                if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
             .frame(width: size.width, height: size.height)
             .clipShape(IslandShape(bottom: exp ? 28 : 12))
-            .onDrop(of: [UTType.fileURL], isTargeted: $dropHover) { handleAirDrop($0) }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -69,37 +67,40 @@ struct IslandView: View {
 
     @ViewBuilder var content: some View {
         switch model.view {
-        case .home:  homeView
-        case .notes: notesView
-        case .drop:  OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 460, height: size.height)
-        case .cast:  OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 520, height: size.height)
+        case .home:         homeView
+        case .notes:        notesView
+        case .dashboard:    DashboardView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
+        case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
+        case .notification: NotificationView(model: model, accent: data.accent).frame(width: 340, height: size.height)
+        case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
+        case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 520, height: size.height)
+        case .onboarding:   OnboardingView(model: model, accent: data.accent).frame(width: 480, height: size.height)
         }
     }
 
     var collapsedView: some View {
         HStack(spacing: 0) {
-            if playing { artwork(18, 5); Spacer(); Waveform(color: data.accent, active: true) }
+            if model.sysObs.showVolumeHUD {
+                Image(systemName: "speaker.wave.3.fill").font(.system(size: 11)).foregroundColor(.white).padding(.leading, 12).padding(.trailing, 8)
+                GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * CGFloat(model.sysObs.volume))) } }.frame(height: 4).padding(.trailing, 16)
+            }
+            else if playing { artwork(18, 5); Spacer(); Waveform(color: data.accent, active: true) }
             else { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
         }
-        .padding(.horizontal, playing ? 12 : 0)
-        .frame(width: playing ? model.notchW + 120 : model.notchW, height: model.notchH)
+        .padding(.horizontal, playing || model.sysObs.showVolumeHUD ? 12 : 0)
+        .frame(width: model.sysObs.showVolumeHUD ? model.notchW + 140 : (playing ? model.notchW + 120 : model.notchW), height: model.notchH)
     }
 
     // ── Home centré ──
     var homeView: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                tbButton("house.fill", .home); tbButton("note.text", .notes)
-                Spacer()
-                if dropHover { Text("Lâcher pour AirDrop").font(.system(size: 10, weight: .semibold)).foregroundColor(data.accent) }
-                batteryBadge
-            }.padding(.horizontal, 18).padding(.top, 11)
+            TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
 
             Spacer(minLength: 2)
             OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
-            Text(dropHover ? "Dépose ton fichier" : (playing ? (data.music?.title ?? "") : "Salut Yanis"))
+            Text(model.dropHover ? "Dépose ton fichier" : (playing ? (data.music?.title ?? "") : "Salut Yanis"))
                 .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
-            Text(playing && !dropHover ? (data.music?.artist ?? "") : "OsaLabs")
+            Text(playing && !model.dropHover ? (data.music?.artist ?? "") : "OsaLabs")
                 .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
             Spacer(minLength: 6)
 
@@ -127,25 +128,12 @@ struct IslandView: View {
 
     var notesView: some View {
         VStack(spacing: 0) {
-            viewHeader("Bloc-note", "note.text")
+            TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
             TextEditor(text: $notes).font(.system(size: 13)).scrollContentBackground(.hidden)
                 .foregroundColor(.white).padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
                 .padding(.horizontal, 20).padding(.bottom, 16)
         }.frame(width: size.width, height: size.height)
-    }
-
-    func viewHeader(_ title: String, _ icon: String) -> some View {
-        HStack(spacing: 8) {
-            Button { model.view = .home } label: { Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.75)).padding(7).contentShape(Rectangle()) }.buttonStyle(.plain)
-            Image(systemName: icon).font(.system(size: 12)).foregroundColor(data.accent)
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-            Spacer(); batteryBadge
-        }.padding(.horizontal, 16).padding(.top, 11).padding(.bottom, 8)
-    }
-
-    func tbButton(_ icon: String, _ target: AppView) -> some View {
-        Button { model.view = target } label: { Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.45)).padding(5).contentShape(Rectangle()) }.buttonStyle(.plain)
     }
 
     @ViewBuilder func artwork(_ s: CGFloat, _ radius: CGFloat) -> some View {
@@ -157,16 +145,6 @@ struct IslandView: View {
         let dur = data.music?.duration ?? 0, pos = data.music?.position ?? 0
         let prog = dur > 0 ? min(1, pos / dur) : 0
         return GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * prog)) } }.frame(height: 3)
-    }
-
-    var batteryBadge: some View {
-        Group {
-            if let b = data.battery {
-                HStack(spacing: 2) { if b.charging { Image(systemName: "bolt.fill").font(.system(size: 9)) }
-                    Text("\(b.percent)%").font(.system(size: 11, weight: .semibold)).monospacedDigit() }
-                    .foregroundColor(b.charging ? .green : (lowBat ? .red : .white.opacity(0.5)))
-            }
-        }
     }
 
     func ctrl(_ icon: String, _ sz: CGFloat, _ action: @escaping () -> Void) -> some View {
@@ -185,12 +163,16 @@ struct IslandView: View {
     }
 
     func handleAirDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard model.view == .home, let p = providers.first else { return false }
-        _ = p.loadObject(ofClass: URL.self) { url, _ in
+        print("📥 DROP RECEIVED! Providers count: \(providers.count)")
+        guard let p = providers.first else { return false }
+        print("📥 Loading provider: \(p.registeredTypeIdentifiers)")
+        
+        _ = p.loadObject(ofClass: URL.self) { url, error in
+            print("📥 Loaded URL: \(String(describing: url)), Error: \(String(describing: error))")
             guard let url else { return }
             DispatchQueue.main.async {
-                let svc = NSSharingService(named: .sendViaAirDrop) ?? NSSharingService(named: NSSharingService.Name("com.apple.share.AirDrop.send"))
-                svc?.perform(withItems: [url])
+                model.droppedURL = url
+                model.view = .drop
             }
         }
         return true

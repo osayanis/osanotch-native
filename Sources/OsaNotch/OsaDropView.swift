@@ -7,189 +7,202 @@ struct OsaDropView: View {
     var accent: Color
     var back: () -> Void
 
-    enum Mode { case choose, send, receive }
-    @State private var mode: Mode = .choose
     @State private var code: String = ""
-    @State private var fileName: String?
     @State private var entry: String = ""
     @State private var dropActive = false
     @StateObject private var bridge = DropBridge()
 
-    var mascotMood: Mood {
-        switch bridge.phase {
-        case .transferring, .done: return .happy
-        default: return dropActive ? .happy : .idle
-        }
-    }
+    static func gen() -> String { String((0..<4).map { _ in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()! }) }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            TabBarView(model: model, accent: accent, dropHover: dropActive, battery: model.data.battery, lowBat: (model.data.battery?.percent ?? 100) < 20)
+
             if bridge.lastReceivedURL != nil {
                 receivedView
             } else {
-                switch mode {
-                case .choose:  chooseView
-                case .send:    sendView
-                case .receive: receiveView
+                HStack(spacing: 12) {
+                    airdropBox
+                    clipboardBox
+                    osadropBox
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
             }
             Spacer(minLength: 0)
         }
         .background(HiddenWeb(webView: bridge.webView).frame(width: 1, height: 1).opacity(0.02))
-        .onAppear { applyHeight() }
-        .onChange(of: mode) { _, _ in applyHeight() }
-        .onChange(of: bridge.lastReceivedURL) { _, _ in applyHeight() }
     }
 
-    func heightFor() -> CGFloat {
-        if bridge.lastReceivedURL != nil { return 230 }
-        switch mode { case .choose: return 192; case .send: return 316; case .receive: return 260 }
-    }
-    func applyHeight() { withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = heightFor() } }
-
-    var receivedView: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                Circle().fill(.green.opacity(0.15)).frame(width: 60, height: 60)
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 42)).foregroundColor(.green)
-            }.padding(.top, 2)
-            Text("Fichier reçu").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
-            Text(bridge.lastReceivedURL?.lastPathComponent ?? "").font(.system(size: 11)).foregroundColor(.white.opacity(0.5)).lineLimit(1).padding(.horizontal, 20)
-            HStack(spacing: 10) {
-                actionBtn("Ouvrir", "folder.fill") { if let u = bridge.lastReceivedURL { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
-                actionBtn("Nouveau", "arrow.down.circle.fill") { bridge.reset(); mode = .receive }
-            }.padding(.top, 2)
-        }.padding(.horizontal, 22).padding(.top, 4)
-    }
-
-    func actionBtn(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) { Image(systemName: icon).font(.system(size: 12)); Text(title).font(.system(size: 12, weight: .semibold)) }
-                .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.08)))
-        }.buttonStyle(.plain)
-    }
-
-    var header: some View {
-        HStack(spacing: 9) {
-            Button {
-                switch mode {
-                case .choose: back()
-                case .send, .receive: bridge.reset(); mode = .choose
-                }
-            } label: {
-                Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8))
-                    .padding(8).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if mode != .choose { OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 26) }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("OsaDrop").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                Text("Transfert P2P").font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
+    // ── Boîte AirDrop ──
+    var airdropBox: some View {
+        Button {
+            if let url = model.droppedURL {
+                let svc = NSSharingService(named: .sendViaAirDrop) ?? NSSharingService(named: NSSharingService.Name("com.apple.share.AirDrop.send"))
+                svc?.perform(withItems: [url])
             }
-            Spacer()
-        }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
-    }
-
-    // Envoyer (gauche) — mascotte (centre) — Recevoir (droite)
-    var chooseView: some View {
-        HStack(spacing: 14) {
-            optionCard("Envoyer", "Partager", "arrow.up") { code = Self.gen(); mode = .send }
-            OsaCharacter(model: model, mood: dropActive ? .happy : .idle, accent: accent, size: 64)
-            optionCard("Recevoir", "Par code", "arrow.down") { mode = .receive }
-        }.padding(.horizontal, 18).padding(.top, 10)
-    }
-
-    func optionCard(_ title: String, _ sub: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
+        } label: {
+            VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(LinearGradient(colors: [accent.lighter(0.16), accent], startPoint: .top, endPoint: .bottom)).frame(width: 48, height: 48)
-                        .shadow(color: accent.opacity(0.55), radius: 9, y: 3)
-                    Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                    Circle().fill(.white.opacity(0.1)).frame(width: 48, height: 48)
+                    Image(systemName: "wifi").font(.system(size: 20)).foregroundColor(.white)
                 }
-                VStack(spacing: 2) {
-                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
-                    Text(sub).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
-                }
+                Text("AirDrop").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 20)
-            .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.055)))
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+            .frame(width: 100, height: 140)
+            .background(RoundedRectangle(cornerRadius: 16).strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6])).foregroundColor(.white.opacity(0.2)))
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
-    var sendView: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16).fill(dropActive ? accent.opacity(0.14) : Color.white.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7])).foregroundColor(dropActive ? accent : .white.opacity(0.18)))
+    // ── Boîte Presse-papier (Clipboard) ──
+    var clipboardBox: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                .foregroundColor(dropActive ? accent : .white.opacity(0.2))
+                .background(dropActive ? accent.opacity(0.1) : Color.clear)
+                .cornerRadius(16)
+            
+            if let url = model.droppedURL {
                 VStack(spacing: 8) {
-                    Image(systemName: fileName == nil ? "arrow.up.doc" : "doc.fill").font(.system(size: 24)).foregroundColor(fileName == nil ? .white.opacity(0.5) : accent)
-                    Text(fileName ?? "Glisse ton fichier ici").font(.system(size: 12, weight: .medium)).foregroundColor(.white.opacity(0.85)).lineLimit(1).padding(.horizontal, 12)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.1)).frame(width: 56, height: 64)
+                        Image(systemName: "doc.fill").font(.system(size: 28)).foregroundColor(.white)
+                        // Badge pour supprimer
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    model.droppedURL = nil
+                                    code = ""
+                                    bridge.reset()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(.red)
+                                        .background(Circle().fill(.white))
+                                }.buttonStyle(.plain).offset(x: 8, y: -8)
+                            }
+                            Spacer()
+                        }
+                    }.frame(width: 56, height: 64)
+                    
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray.and.arrow.down").font(.system(size: 24)).foregroundColor(.white.opacity(0.3))
+                    Text("Glisse un fichier ici").font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
                 }
             }
-            .frame(height: 98)
-            .onDrop(of: [UTType.fileURL], isTargeted: $dropActive) { providers in
-                providers.first?.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    DispatchQueue.main.async { fileName = url.lastPathComponent; bridge.send(fileURL: url, code: code) }
-                }
-                return true
+        }
+        .frame(maxWidth: .infinity, maxHeight: 140)
+        .onDrag {
+            if let url = model.droppedURL {
+                return NSItemProvider(object: url as NSURL)
             }
-            if fileName != nil {
-                VStack(spacing: 5) {
-                    Text("CODE À PARTAGER").font(.system(size: 8.5, weight: .semibold)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
-                    Text(code).font(.system(size: 30, weight: .bold, design: .monospaced)).foregroundColor(accent).tracking(6)
-                    statusRow
+            return NSItemProvider()
+        }
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropActive) { providers in
+            providers.first?.loadObject(ofClass: URL.self) { url, _ in
+                if let url = url {
+                    DispatchQueue.main.async { model.droppedURL = url }
                 }
             }
-        }.padding(.horizontal, 22).padding(.top, 2)
-    }
-
-    var receiveView: some View {
-        VStack(spacing: 14) {
-            Text("Entre le code reçu").font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
-            TextField("", text: $entry)
-                .textFieldStyle(.plain).font(.system(size: 28, weight: .bold, design: .monospaced))
-                .multilineTextAlignment(.center).foregroundColor(.white).tracking(6)
-                .frame(height: 56).background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
-                .onChange(of: entry) { _, v in entry = String(v.uppercased().prefix(6)) }
-            Button { bridge.receive(code: entry) } label: {
-                Text(entry.count == 6 ? "Se connecter" : "Code à 6 lettres").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(entry.count == 6 ? .black : .white.opacity(0.4)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 13).fill(entry.count == 6 ? accent : .white.opacity(0.08)))
-            }.buttonStyle(.plain).disabled(entry.count != 6)
-            statusRow
-        }.padding(.horizontal, 26).padding(.top, 2)
-    }
-
-    @ViewBuilder var statusRow: some View {
-        switch bridge.phase {
-        case .idle, .loading: EmptyView()
-        case .waiting: label("En attente du correspondant…", accent)
-        case .connecting: label("Connexion…", accent)
-        case .connected: label("Connecté", accent)
-        case .transferring(let p): VStack(spacing: 4) { label("Transfert \(Int(p*100))%", accent); ProgressView(value: p).frame(width: 150).tint(accent) }
-        case .done(let m): label(m, .green)
-        case .failed: label("Échec — réessaie", .red)
+            return true
         }
     }
-    func label(_ t: String, _ c: Color) -> some View { Text(t).font(.system(size: 10.5, weight: .medium)).foregroundColor(c) }
 
-    func bigButton(_ title: String, _ icon: String, _ sub: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 13) {
-                ZStack { Circle().fill(accent).frame(width: 36, height: 36); Image(systemName: icon).font(.system(size: 15, weight: .bold)).foregroundColor(.white) }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                    Text(sub).font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+    // ── Boîte OsaDrop ──
+    var osadropBox: some View {
+        Button {
+            if let url = model.droppedURL, code.isEmpty {
+                code = Self.gen()
+                bridge.send(fileURL: url, code: code)
+            }
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                    .foregroundColor(accent.opacity(0.5))
+                
+                if model.droppedURL != nil {
+                    // Mode Envoi
+                    VStack(spacing: 10) {
+                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        if code.isEmpty {
+                            Image(systemName: "paperplane.fill").font(.system(size: 24)).foregroundColor(.white)
+                            Text("Générer").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+                        } else {
+                            Text(code).font(.system(size: 24, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(4)
+                            
+                            if case .transferring(let p) = bridge.phase {
+                                Text("Envoi...").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
+                                ProgressView(value: p).progressViewStyle(.linear).tint(accent).frame(width: 80).padding(.top, 4)
+                            } else {
+                                Text("En attente").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
+                            }
+                        }
+                    }
+                } else {
+                    // Mode Réception
+                    VStack(spacing: 12) {
+                        Text("OSADROP").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        
+                        if case .transferring(let p) = bridge.phase {
+                            ProgressView(value: p).progressViewStyle(.linear).tint(accent).frame(width: 80)
+                            Text("Réception...").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
+                        } else {
+                            TextField("CODE", text: $entry)
+                                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 90, height: 32)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)))
+                                .textFieldStyle(.plain)
+                                .foregroundColor(.white)
+                                .onChange(of: entry) { _, new in
+                                    entry = new.uppercased().filter { $0.isLetter || $0.isNumber }
+                                    if entry.count > 4 { entry = String(entry.prefix(4)) }
+                                    if entry.count == 4 {
+                                        bridge.receive(code: entry)
+                                    }
+                                }
+                            Text("Entrer le code").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                        }
+                    }
                 }
-                Spacer(); Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.3))
-            }.padding(.horizontal, 14).padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 15).fill(.white.opacity(0.055)))
+            }
+            .frame(width: 130, height: 140)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
-    static func gen() -> String { String((0..<6).map { _ in "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".randomElement()! }) }
+    var receivedView: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle().fill(.green.opacity(0.2)).frame(width: 64, height: 64)
+                Image(systemName: "checkmark").font(.system(size: 28, weight: .bold)).foregroundColor(.green)
+            }
+            Text("Fichier reçu avec succès").font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+            if let u = bridge.lastReceivedURL { Text(u.lastPathComponent).font(.system(size: 12)).foregroundColor(.white.opacity(0.6)) }
+            HStack(spacing: 16) {
+                Button { bridge.reset(); entry = "" } label: {
+                    Text("Fermer").font(.system(size: 13, weight: .semibold)).foregroundColor(.white).frame(width: 100, height: 36)
+                        .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.1)))
+                }.buttonStyle(.plain)
+                Button {
+                    if let u = bridge.lastReceivedURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }
+                    bridge.reset(); entry = ""
+                } label: {
+                    Text("Ouvrir").font(.system(size: 13, weight: .semibold)).foregroundColor(.black).frame(width: 100, height: 36)
+                        .background(RoundedRectangle(cornerRadius: 18).fill(accent))
+                }.buttonStyle(.plain)
+            }.padding(.top, 8)
+        }.padding(.top, 20).frame(height: 200)
+    }
 }

@@ -34,11 +34,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSBonjourServices</key>
   <array><string>_osadrop._tcp</string><string>_osadrop._udp</string></array>
   <key>NSHumanReadableCopyright</key><string>OsaLabs</string>
+    <key>NSCameraUsageDescription</key>
+    <string>OsaNotch utilise la caméra pour la fonction miroir.</string>
 </dict>
 </plist>
 PLIST
 
-echo "▶︎ signature ad-hoc…"
-codesign --force --deep --sign - "$APP" 2>/dev/null || true
+echo "▶︎ signature avec certificat développeur (évite les redemandes de permissions)…"
+codesign --force --deep --sign "Apple Development: yanisb03@icloud.com (Q7R38U82N7)" "$APP" 2>/dev/null || true
 
 echo "✅ $APP prêt."

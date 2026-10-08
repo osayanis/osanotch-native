@@ -46,7 +46,7 @@ struct OsaDropView: View {
                 Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8))
                     .padding(8).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 28)
+            if mode != .choose { OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 26) }
             VStack(alignment: .leading, spacing: 0) {
                 Text("OsaDrop").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                 Text("Transfert P2P").font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
@@ -55,11 +55,32 @@ struct OsaDropView: View {
         }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
     }
 
+    // Envoyer (gauche) — mascotte (centre) — Recevoir (droite)
     var chooseView: some View {
-        VStack(spacing: 10) {
-            bigButton("Envoyer un fichier", "arrow.up", "Choisis un fichier à partager") { code = Self.gen(); mode = .send }
-            bigButton("Recevoir un fichier", "arrow.down", "Entre un code pour recevoir") { mode = .receive }
-        }.padding(.horizontal, 20).padding(.top, 4)
+        HStack(spacing: 14) {
+            optionCard("Envoyer", "Partager", "arrow.up") { code = Self.gen(); mode = .send }
+            OsaCharacter(model: model, mood: dropActive ? .happy : .idle, accent: accent, size: 64)
+            optionCard("Recevoir", "Par code", "arrow.down") { mode = .receive }
+        }.padding(.horizontal, 18).padding(.top, 10)
+    }
+
+    func optionCard(_ title: String, _ sub: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(LinearGradient(colors: [accent.lighter(0.16), accent], startPoint: .top, endPoint: .bottom)).frame(width: 48, height: 48)
+                        .shadow(color: accent.opacity(0.55), radius: 9, y: 3)
+                    Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                }
+                VStack(spacing: 2) {
+                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
+                    Text(sub).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 20)
+            .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.055)))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        }.buttonStyle(.plain)
     }
 
     var sendView: some View {

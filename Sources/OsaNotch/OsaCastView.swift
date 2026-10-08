@@ -31,7 +31,7 @@ struct OsaCastView: View {
                 Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8))
                     .padding(8).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 28)
+            if mode != .choose { OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 26) }
             VStack(alignment: .leading, spacing: 0) {
                 Text("OsaCast").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                 Text("Partage d'écran").font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
@@ -41,10 +41,30 @@ struct OsaCastView: View {
     }
 
     var chooseView: some View {
-        VStack(spacing: 10) {
-            bigButton("Créer une room", "plus", "Partage ton écran en direct") { code = Self.gen(); mode = .hosting }
-            bigButton("Rejoindre une room", "arrow.right", "Regarde l'écran de quelqu'un") { mode = .joining }
-        }.padding(.horizontal, 20).padding(.top, 4)
+        HStack(spacing: 14) {
+            optionCard("Créer", "Diffuser", "plus") { code = Self.gen(); mode = .hosting }
+            OsaCharacter(model: model, mood: .idle, accent: accent, size: 64)
+            optionCard("Rejoindre", "Regarder", "arrow.right") { mode = .joining }
+        }.padding(.horizontal, 18).padding(.top, 10)
+    }
+
+    func optionCard(_ title: String, _ sub: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(LinearGradient(colors: [accent.lighter(0.16), accent], startPoint: .top, endPoint: .bottom)).frame(width: 48, height: 48)
+                        .shadow(color: accent.opacity(0.55), radius: 9, y: 3)
+                    Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                }
+                VStack(spacing: 2) {
+                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
+                    Text(sub).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 20)
+            .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.055)))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        }.buttonStyle(.plain)
     }
 
     var hostingView: some View {

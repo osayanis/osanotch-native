@@ -70,8 +70,8 @@ struct IslandView: View {
         switch model.view {
         case .home:  homeView
         case .notes: notesView
-        case .drop:  OsaDropView(accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
-        case .cast:  OsaCastView(accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
+        case .drop:  OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
+        case .cast:  OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
         }
     }
 

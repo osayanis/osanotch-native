@@ -136,7 +136,7 @@ struct IslandView: View {
 
     func viewHeader(_ title: String, _ icon: String) -> some View {
         HStack(spacing: 8) {
-            Button { model.view = .home } label: { Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundColor(.white.opacity(0.7)) }.buttonStyle(.plain)
+            Button { model.view = .home } label: { Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.75)).padding(7).contentShape(Rectangle()) }.buttonStyle(.plain)
             Image(systemName: icon).font(.system(size: 12)).foregroundColor(data.accent)
             Text(title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
             Spacer(); batteryBadge
@@ -144,7 +144,7 @@ struct IslandView: View {
     }
 
     func tbButton(_ icon: String, _ target: AppView) -> some View {
-        Button { model.view = target } label: { Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.4)) }.buttonStyle(.plain)
+        Button { model.view = target } label: { Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.45)).padding(5).contentShape(Rectangle()) }.buttonStyle(.plain)
     }
 
     @ViewBuilder func artwork(_ s: CGFloat, _ radius: CGFloat) -> some View {

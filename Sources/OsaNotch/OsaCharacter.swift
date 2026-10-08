@@ -44,10 +44,10 @@ struct OsaCharacter: View {
         if mood == .sleeping { blink = 0.05 }
         else { let d = t.truncatingRemainder(dividingBy: 3.2); if d < 0.13 { blink = max(0.08, abs(d - 0.065) / 0.065) } }
 
-        // Halo lumineux (couleur pochette) derrière le perso
-        ctx.fill(Path(ellipseIn: CGRect(x: cx - R * 1.7, y: cy - R * 1.7, width: R * 3.4, height: R * 3.4)),
-                 with: .radialGradient(Gradient(colors: [accent.opacity(0.45), accent.opacity(0)]),
-                                       center: CGPoint(x: cx, y: cy), startRadius: R * 0.4, endRadius: R * 1.7))
+        // Halo lumineux (couleur pochette) derrière le perso — subtil
+        ctx.fill(Path(ellipseIn: CGRect(x: cx - R * 1.9, y: cy - R * 1.9, width: R * 3.8, height: R * 3.8)),
+                 with: .radialGradient(Gradient(colors: [accent.opacity(0.32), accent.opacity(0)]),
+                                       center: CGPoint(x: cx, y: cy), startRadius: R * 0.6, endRadius: R * 1.9))
 
         ctx.translateBy(x: cx, y: cy + bob)
         ctx.rotate(by: .radians(roll))

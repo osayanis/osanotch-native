@@ -30,7 +30,8 @@ struct OsaDropView: View {
     var header: some View {
         HStack(spacing: 8) {
             Button { mpc.reset(); if mode == .choose { back() } else { mode = .choose } } label: {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundColor(.white.opacity(0.7))
+                Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.75))
+                    .padding(7).contentShape(Rectangle())
             }.buttonStyle(.plain)
             Image(systemName: "paperplane.fill").font(.system(size: 12)).foregroundColor(accent)
             Text("OsaDrop").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)

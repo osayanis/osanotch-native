@@ -79,7 +79,7 @@ enum Island {
         switch view {
         case .home:         return playing ? CGSize(width: 560, height: 168) : CGSize(width: 480, height: 185)
         case .notes:        return CGSize(width: 440, height: 320)
-        case .drop:         return CGSize(width: 480, height: 210)
+        case .drop:         return CGSize(width: 480, height: vh)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 320)
@@ -165,25 +165,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var lastProcessedDragCount = NSPasteboard(name: .drag).changeCount
         
         let dropHandler: (NSEvent) -> NSEvent? = { [weak self] e in
-            self?.model.isDragging = false
             guard let self = self else { return e }
+            self.model.isDragging = false
             let p = NSEvent.mouseLocation
             guard let sf = (self.panel.screen ?? NSScreen.main)?.frame else { return e }
+
+            let pb = NSPasteboard(name: .drag)
+            let cc = pb.changeCount
+            // Chaque glisser n'est traité qu'UNE fois. On le "consomme" dès le premier
+            // relâchement, où qu'il ait lieu → un déplacement dossier→dossier ne peut plus
+            // être récupéré par un clic ultérieur sur le notch.
+            guard cc != lastProcessedDragCount else { return e }
+            lastProcessedDragCount = cc
+
             let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notifBanner: self.model.showNotifBanner, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
             let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
-            
-            if shapeRect.contains(p) {
-                let pb = NSPasteboard(name: .drag)
-                if pb.changeCount != lastProcessedDragCount {
-                    lastProcessedDragCount = pb.changeCount
-                    if let urls = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], let url = urls.first {
-                        DispatchQueue.main.async {
-                            self.model.droppedURL = url
-                            self.model.view = .drop
-                            self.model.expanded = true
-                        }
-                    }
-                }
+
+            // On n'ajoute le fichier QUE si le glisser se termine réellement sur le notch.
+            guard shapeRect.contains(p),
+                  pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]),
+                  let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+                  let url = urls.first else { return e }
+            DispatchQueue.main.async {
+                self.model.droppedURL = url
+                self.model.view = .drop
+                self.model.expanded = true
             }
             return e
         }

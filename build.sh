@@ -30,6 +30,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSAppleEventsUsageDescription</key><string>OsaNotch lit et pilote Music/Spotify pour afficher la musique en cours.</string>
   <key>NSCalendarsUsageDescription</key><string>OsaNotch affiche votre prochain évènement.</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>OsaNotch affiche votre prochain évènement.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>OsaDrop transfère vos fichiers en P2P sur le réseau local.</string>
+  <key>NSBonjourServices</key>
+  <array><string>_osadrop._tcp</string><string>_osadrop._udp</string></array>
   <key>NSHumanReadableCopyright</key><string>OsaLabs</string>
 </dict>
 </plist>

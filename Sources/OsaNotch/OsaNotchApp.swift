@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     var panel: IslandPanel!
     var cursorTimer: Timer?
+    var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = NSRunningApplication.current
@@ -54,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .screenSaver
+        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel())) // au-dessus de la barre de menus (îlot centré uniquement)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -71,6 +72,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         cursorTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
         model.data.start()
+
+        // ÉCHAPPATOIRE : ESC referme toujours tout (jamais de blocage possible).
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            if e.keyCode == 53 { self?.closeAll(); return nil }
+            return e
+        }
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            if e.keyCode == 53 { self?.closeAll() }
+        }
+
+        // Donner le focus clavier UNE SEULE FOIS à l'ouverture d'une vue à saisie.
+        model.$view.removeDuplicates().sink { [weak self] v in
+            guard let self else { return }
+            if v == .drop || v == .cast || v == .notes {
+                self.panel.makeKeyAndOrderFront(nil)
+            }
+        }.store(in: &cancellables)
+    }
+
+    func closeAll() {
+        model.view = .home
+        model.expanded = false
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
     }
 
     func tick() {
@@ -91,7 +116,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
         panel.ignoresMouseEvents = !shapeRect.contains(p)
-
-        if model.expanded && model.view != .home && !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
     }
 }

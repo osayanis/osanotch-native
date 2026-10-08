@@ -148,9 +148,10 @@ struct IslandView: View {
     @ViewBuilder var collapsedView: some View {
         if hudActive { hudView }
         else if playing {
-            HStack(spacing: 0) { artwork(18, 5); Spacer(); Waveform(color: data.accent, active: true) }
-                .padding(.horizontal, 12)
-                .frame(width: model.notchW + 120, height: model.notchH)
+            // Pochette et égaliseur collés aux bords de l'encoche physique.
+            HStack(spacing: 0) { artwork(18, 5); Spacer(minLength: model.notchW); Waveform(color: data.accent, active: true) }
+                .padding(.horizontal, 7)
+                .frame(width: model.notchW + 56, height: model.notchH)
         }
         else {
             HStack(spacing: 0) { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }

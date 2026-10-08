@@ -73,7 +73,7 @@ enum Island {
             if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
             if hud { return CGSize(width: notchW + 190, height: notchH + 30) }
-            return CGSize(width: playing ? notchW + 120 : notchW, height: notchH)
+            return CGSize(width: playing ? notchW + 56 : notchW, height: notchH)
         }
         _ = sw
         switch view {

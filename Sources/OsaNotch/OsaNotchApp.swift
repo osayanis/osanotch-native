@@ -12,18 +12,19 @@ final class AppModel: ObservableObject {
     @Published var notchW: CGFloat = 180   // taille réelle de l'encoche
     @Published var notchH: CGFloat = 32
     @Published var viewHeight: CGFloat = 200   // hauteur ajustée au contenu (drop/cast)
+    @Published var screenW: CGFloat = 1440
 }
 
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
         if !expanded { return CGSize(width: playing ? notchW + 120 : notchW, height: notchH) }
         switch view {
-        case .home:  return CGSize(width: 480, height: 210)
-        case .notes: return CGSize(width: 440, height: 300)
-        case .drop:  return CGSize(width: 460, height: vh)
-        case .cast:  return CGSize(width: 520, height: vh)
+        case .home:  return CGSize(width: 480, height: 210)           // home compact (inchangé)
+        case .notes: return CGSize(width: sw, height: 300)            // vues de fonction : pleine largeur → couvrent les icônes du menu
+        case .drop:  return CGSize(width: sw, height: vh)
+        case .cast:  return CGSize(width: sw, height: vh)
         }
     }
     static func homeRect(_ sf: CGRect) -> CGRect { CGRect(x: sf.midX - 240, y: sf.maxY - 210, width: 480, height: 210) }
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first!
         let sf = screen.frame
+        model.screenW = sf.width
         // Taille réelle de l'encoche physique (comme coucou)
         if screen.safeAreaInsets.top > 0 {
             model.notchH = screen.safeAreaInsets.top
@@ -122,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !Island.homeRect(sf).insetBy(dx: -8, dy: -8).contains(p) { model.expanded = false }
         }
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
         panel.ignoresMouseEvents = !shapeRect.contains(p)
     }

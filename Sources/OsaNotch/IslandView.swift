@@ -45,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
 
     var body: some View {
         let exp = model.expanded
@@ -71,8 +71,8 @@ struct IslandView: View {
         switch model.view {
         case .home:  homeView
         case .notes: notesView
-        case .drop:  OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
-        case .cast:  OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: size.width, height: size.height)
+        case .drop:  OsaDropView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 460, height: size.height)
+        case .cast:  OsaCastView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 520, height: size.height)
         }
     }
 

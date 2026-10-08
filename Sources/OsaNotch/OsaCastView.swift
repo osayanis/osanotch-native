@@ -66,22 +66,27 @@ struct OsaCastView: View {
 
     var chooseView: some View {
         HStack(spacing: 14) {
-            optionCard("Créer", "Diffuser", "plus") { bridge.host(); mode = .hosting }
+            optionCard("Créer", "Diffuser l'écran", "plus.rectangle.on.rectangle") { bridge.host(); mode = .hosting }
             OsaCharacter(model: model, mood: .idle, accent: accent, size: 64)
-            optionCard("Rejoindre", "Regarder", "arrow.right") { mode = .joining }
-        }.padding(.horizontal, 18).padding(.top, 10)
+            optionCard("Rejoindre", "Regarder", "eye.fill") { mode = .joining }
+        }.padding(.horizontal, 18).padding(.top, 6)
     }
 
     var hostingView: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18).fill(.black).overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.red.opacity(0.55), lineWidth: 1.5))
-                VStack(spacing: 10) {
-                    HStack(spacing: 6) { Circle().fill(.red).frame(width: 8, height: 8); Text(bridge.phase == .connected || bridge.phase == .live ? "EN DIRECT" : "EN ATTENTE").font(.system(size: 10, weight: .bold)).foregroundColor(.red).tracking(1.5) }
-                    Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 32, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(6)
-                    Text(bridge.phase == .error ? "Capture d'écran refusée" : "Donne ce code pour te regarder").font(.system(size: 10.5)).foregroundColor(bridge.phase == .error ? .red : .white.opacity(0.5))
+        let live = bridge.phase == .connected || bridge.phase == .live
+        let err = bridge.phase == .error
+        return VStack(spacing: 10) {
+            VStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Circle().fill(live ? .red : accent).frame(width: 7, height: 7)
+                    Text(live ? "EN DIRECT" : "EN ATTENTE").font(.system(size: 10, weight: .bold)).foregroundColor(live ? .red : accent).tracking(2)
                 }
-            }.frame(height: 150)
+                Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 34, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(7)
+                Text(err ? "Capture d'écran refusée" : "Partage ce code pour être regardé").font(.system(size: 10.5)).foregroundColor(err ? .red : .white.opacity(0.45))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 18)
+            .background(RoundedRectangle(cornerRadius: 16).fill((live ? Color.red : accent).opacity(0.1)))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder((live ? Color.red : accent).opacity(0.4), lineWidth: 1))
         }.padding(.horizontal, 22).padding(.top, 2)
     }
 

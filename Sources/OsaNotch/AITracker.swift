@@ -22,41 +22,45 @@ class AITracker: ObservableObject {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         
         let bundleId = app.bundleIdentifier ?? ""
-        let isBrowser = ["com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "com.brave.Browser"].contains(bundleId)
-        let isTerminal = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty"].contains(bundleId)
-        
+        let isBrowser = ["com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "com.brave.Browser", "com.microsoft.edgemac"].contains(bundleId)
+        let isTerminal = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable"].contains(bundleId)
+        // Applications IA de bureau (Antigravity, Gemini, ChatGPT, etc.)
+        let aiApps: [String: String] = [
+            "com.google.antigravity": "Antigravity",
+            "com.google.GeminiMacOS": "Gemini",
+            "com.openai.chat": "ChatGPT",
+            "com.anthropic.claudefordesktop": "Claude",
+        ]
+
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var focusedWindow: CFTypeRef?
         AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedWindow)
-        
+
         guard let window = focusedWindow else { return }
         let axWindow = window as! AXUIElement
-        
+
         var titleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleRef)
         let title = (titleRef as? String) ?? ""
-        
+
         var detectingAI: String? = nil
         var generating = false
-        
-        if isBrowser {
+
+        if let name = aiApps[bundleId] {
+            detectingAI = name
+            generating = scanForGenerating(axWindow)
+        } else if isBrowser {
             if title.contains("Claude") { detectingAI = "Claude" }
             else if title.contains("Gemini") { detectingAI = "Gemini" }
             else if title.contains("ChatGPT") { detectingAI = "ChatGPT" }
-            
-            // Si on est sur une IA, on cherche un bouton "Stop generating" ou équivalent (via un scan rapide ou heuristique)
-            // Pour des raisons de perfs, on simule la détection via le titre (souvent "(Generating) Claude" ou similaire selon l'extension)
-            // Dans une vraie implémentation, on scannerait les AXButton.
-            generating = checkBrowserGenerating(axWindow)
+            if detectingAI != nil { generating = scanForGenerating(axWindow) }
         } else if isTerminal {
-            if title.contains("claude-code") || title.contains("claude") { detectingAI = "Claude Code" }
-            else if title.contains("antigravity") { detectingAI = "Antigravity" }
-            else if title.contains("codex") { detectingAI = "Codex" }
-            
-            // Dans le terminal, la génération est souvent bloquante ou affiche un spinner.
-            generating = checkTerminalGenerating(axWindow)
+            if title.localizedCaseInsensitiveContains("claude") { detectingAI = "Claude Code" }
+            else if title.localizedCaseInsensitiveContains("antigravity") { detectingAI = "Antigravity" }
+            else if title.localizedCaseInsensitiveContains("codex") { detectingAI = "Codex" }
+            if detectingAI != nil { generating = scanForGenerating(axWindow) }
         }
-        
+
         DispatchQueue.main.async {
             self.currentAI = detectingAI
             self.isGenerating = generating
@@ -69,26 +73,26 @@ class AITracker: ObservableObject {
         }
     }
     
-    private func checkBrowserGenerating(_ axWindow: AXUIElement) -> Bool {
-        // Logique de scan d'accessibilité simplifiée
+    // Indices textuels d'une génération en cours (bouton Stop, spinner, "interrupt"…).
+    private static let genKeywords = [
+        "stop generating", "stop response", "stop streaming", "génération en cours",
+        "generating", "thinking", "esc to interrupt", "interrupt", "cancel generation",
+        "arrêter la génération", "répond", "is working", "running…", "en cours d'exécution",
+    ]
+
+    private func scanForGenerating(_ axWindow: AXUIElement) -> Bool {
         var isGen = false
-        scanAXTree(element: axWindow) { role, title, desc in
+        scanAXTree(element: axWindow, depth: 0, maxDepth: 22) { role, title, desc in
             let text = [title, desc].compactMap { $0 }.joined(separator: " ").lowercased()
-            if text.contains("stop generating") || text.contains("arrête") || text.contains("generating") {
-                isGen = true
-                return true // stop scan
-            }
+            if text.isEmpty { return false }
+            if Self.genKeywords.contains(where: { text.contains($0) }) { isGen = true; return true }
             return false
         }
         return isGen
     }
-    
-    private func checkTerminalGenerating(_ axWindow: AXUIElement) -> Bool {
-        // Heuristique terminal : s'il n'y a pas de prompt actif, ça tourne
-        return false // à affiner
-    }
-    
-    private func scanAXTree(element: AXUIElement, block: (String, String?, String?) -> Bool) {
+
+    private func scanAXTree(element: AXUIElement, depth: Int = 0, maxDepth: Int = 22, block: (String, String?, String?) -> Bool) {
+        if depth > maxDepth { return }
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
         let role = (roleRef as? String) ?? ""
@@ -107,7 +111,7 @@ class AITracker: ObservableObject {
         AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
         if let children = childrenRef as? [AXUIElement] {
             for child in children {
-                scanAXTree(element: child, block: block)
+                scanAXTree(element: child, depth: depth + 1, maxDepth: maxDepth, block: block)
             }
         }
     }

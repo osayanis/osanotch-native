@@ -43,8 +43,8 @@ struct OsaDropView: View {
     }
 
     func heightFor() -> CGFloat {
-        if bridge.lastReceivedURL != nil { return 214 }
-        switch mode { case .choose: return 176; case .send: return 300; case .receive: return 244 }
+        if bridge.lastReceivedURL != nil { return 230 }
+        switch mode { case .choose: return 192; case .send: return 316; case .receive: return 260 }
     }
     func applyHeight() { withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = heightFor() } }
 

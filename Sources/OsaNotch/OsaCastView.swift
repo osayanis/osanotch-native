@@ -27,7 +27,7 @@ struct OsaCastView: View {
         .onChange(of: mode) { _, _ in applyHeight() }
     }
     func applyHeight() {
-        let h: CGFloat = mode == .choose ? 176 : (mode == .hosting ? 252 : 244)
+        let h: CGFloat = mode == .choose ? 192 : (mode == .hosting ? 268 : 260)
         withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = h }
     }
 

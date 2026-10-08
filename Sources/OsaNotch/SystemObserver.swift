@@ -21,12 +21,18 @@ class SystemObserver: ObservableObject {
     // pour l'ajustement automatique par le capteur de lumière.
     private var brightnessKeyUntil: TimeInterval = 0
 
-    // DisplayServicesGetBrightness (framework privé) chargé dynamiquement → pas de bridging header.
     private typealias GetBrightnessFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
     private let getBrightness: GetBrightnessFn? = {
         guard let h = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW),
               let sym = dlsym(h, "DisplayServicesGetBrightness") else { return nil }
         return unsafeBitCast(sym, to: GetBrightnessFn.self)
+    }()
+
+    private typealias SetBrightnessFn = @convention(c) (CGDirectDisplayID, Float) -> Int32
+    private let setBrightness: SetBrightnessFn? = {
+        guard let h = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW),
+              let sym = dlsym(h, "DisplayServicesSetBrightness") else { return nil }
+        return unsafeBitCast(sym, to: SetBrightnessFn.self)
     }()
 
     init() {
@@ -69,6 +75,17 @@ class SystemObserver: ObservableObject {
                 }
             }
         }
+    }
+
+    func setVolumeValue(_ val: Float) {
+        var v = Float32(max(0, min(1, val)))
+        var propertySize: UInt32 = UInt32(MemoryLayout<Float32>.size)
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectSetPropertyData(defaultOutputDeviceID, &propertyAddress, 0, nil, propertySize, &v)
     }
 
     func updateVolume() {
@@ -128,20 +145,65 @@ class SystemObserver: ObservableObject {
         }
     }
 
-    // Détecte les touches de luminosité (évènements HID "system defined", sous-type 8).
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
     private func startBrightnessKeyWatch() {
-        let handler: (NSEvent) -> Void = { [weak self] e in
-            guard e.subtype.rawValue == 8 else { return }
-            let keyCode = Int((e.data1 & 0xFFFF0000) >> 16)
-            let keyFlags = Int(e.data1 & 0x0000FFFF)
-            let keyDown = ((keyFlags & 0xFF00) >> 8) == 0x0A
-            // NX_KEYTYPE_BRIGHTNESS_UP = 2, NX_KEYTYPE_BRIGHTNESS_DOWN = 3
-            if keyDown && (keyCode == 2 || keyCode == 3) {
-                self?.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
-            }
+        let mask = (1 << 14) // CGEventType.systemDefined
+        let observerPtr = Unmanaged.passUnretained(self).toOpaque()
+        eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: { proxy, type, event, refcon in
+                if type.rawValue == 14 {
+                    if let nsEvent = NSEvent(cgEvent: event), nsEvent.subtype.rawValue == 8 {
+                        let data1 = nsEvent.data1
+                        let keyCode = Int((data1 & 0xFFFF0000) >> 16)
+                        let keyFlags = Int(data1 & 0x0000FFFF)
+                        let keyDown = ((keyFlags & 0xFF00) >> 8) == 0x0A
+                        
+                        // 0=volUp, 1=volDown, 7=mute, 2=brightUp, 3=brightDown
+                        if [0,1,7,2,3].contains(keyCode) {
+                            if keyDown, let ref = refcon {
+                                let obs = Unmanaged<SystemObserver>.fromOpaque(ref).takeUnretainedValue()
+                                DispatchQueue.main.async {
+                                    if keyCode == 0 { obs.setVolumeValue(obs.volume + 0.0625) }
+                                    else if keyCode == 1 { obs.setVolumeValue(obs.volume - 0.0625) }
+                                    else if keyCode == 7 { obs.setVolumeValue(obs.volume > 0 ? 0 : 0.1) }
+                                    else if keyCode == 2 {
+                                        obs.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
+                                        let nb = min(1, obs.brightness + 0.0625)
+                                        obs.brightness = nb
+                                        obs.showBrightnessHUDNow()
+                                        if let fn = obs.setBrightness { _ = fn(CGMainDisplayID(), nb) }
+                                    }
+                                    else if keyCode == 3 {
+                                        obs.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
+                                        let nb = max(0, obs.brightness - 0.0625)
+                                        obs.brightness = nb
+                                        obs.showBrightnessHUDNow()
+                                        if let fn = obs.setBrightness { _ = fn(CGMainDisplayID(), nb) }
+                                    }
+                                }
+                            }
+                            return nil // swallow event, disables native macOS OSD!
+                        }
+                    }
+                }
+                return Unmanaged.passUnretained(event)
+            },
+            userInfo: observerPtr
+        )
+        
+        if let tap = eventTap {
+            runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+        } else {
+            print("WARNING: OsaNotch requires Accessibility permissions to swallow native OSD.")
         }
-        NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { handler($0) }
-        NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { handler($0); return $0 }
     }
 
     private func showBrightnessHUDNow() {
@@ -155,19 +217,9 @@ class SystemObserver: ObservableObject {
     }
     private var brightnessTimerHide: Timer?
 
-    // ── Supprimer l'OSD natif de macOS (OSDUIHelper) ─────────────
-    // On SUSPEND le process (SIGSTOP) : le volume/la luminosité changent toujours,
-    // mais l'overlay natif ne se dessine plus. Restauré (SIGCONT) à la fermeture.
-    private func osd(_ signal: String) {
-        let p = Process()
-        p.launchPath = "/usr/bin/killall"
-        p.arguments = [signal, "OSDUIHelper"]
-        p.standardError = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        try? p.run()
-    }
-    func suppressNativeOSD() { osd("-STOP"); osdSuppressed = true }
-    func restoreNativeOSD() { if osdSuppressed { osd("-CONT"); osdSuppressed = false } }
+    // Native OSD suppression is now handled by the CGEventTap intercepting the keys.
+    func suppressNativeOSD() {}
+    func restoreNativeOSD() {}
 }
 
 import Network

@@ -14,7 +14,7 @@ struct DashboardView: View {
             HStack(spacing: 16) {
                 // Colonne de gauche (Caméra)
                 CameraMirrorView(accent: accent)
-                    .frame(width: 160, height: 172)
+                    .frame(width: 160, height: 190)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.1), lineWidth: 1))
 
@@ -36,22 +36,68 @@ struct DashboardView: View {
         }
     }
 
+    // Calendrier façon NotchNook : mois + bande de 5 jours (aujourd'hui surligné) + prochain évènement.
     var calendarCard: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06))
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: "calendar").font(.system(size: 12)).foregroundColor(accent)
-                    Text("Prochain événement").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.5))
+        let cal = Calendar.current
+        let today = Date()
+        let days = (-2...2).map { cal.date(byAdding: .day, value: $0, to: today)! }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(monthStr(today)).font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                Spacer()
+                HStack(spacing: 0) {
+                    ForEach(days, id: \.self) { d in dayCell(d, today: today, cal: cal) }
                 }
-                if let ev = model.data.event {
-                    Text(ev.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-                    Text(ev.when).font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
-                } else {
-                    Text("Rien de prévu").font(.system(size: 13, weight: .semibold)).foregroundColor(.white.opacity(0.5))
-                }
-            }.padding(12)
-        }.frame(height: 74)
+            }
+            eventCard
+        }
+    }
+
+    func dayCell(_ d: Date, today: Date, cal: Calendar) -> some View {
+        let isToday = cal.isDate(d, inSameDayAs: today)
+        let hasEvent = model.data.eventDays.contains(cal.startOfDay(for: d))
+        return VStack(spacing: 3) {
+            Text(weekdayLetter(d, isToday: isToday))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(isToday ? accent : .white.opacity(0.4))
+            Text("\(cal.component(.day, from: d))")
+                .font(.system(size: 14, weight: isToday ? .bold : .medium))
+                .foregroundColor(isToday ? accent : .white.opacity(0.85))
+            Circle().fill(hasEvent ? accent : .clear).frame(width: 3, height: 3)
+        }
+        .frame(width: 30)
+    }
+
+    @ViewBuilder var eventCard: some View {
+        HStack(spacing: 10) {
+            if let ev = model.data.event {
+                Text(ev.title).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white)
+                    .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 6)
+                Circle().fill(accent).frame(width: 5, height: 5)
+                Text("\(timeStr(ev.start)) – \(timeStr(ev.end))").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundColor(.white.opacity(0.7))
+            } else {
+                Text("Rien de prévu").font(.system(size: 12.5, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.06)))
+    }
+
+    func monthStr(_ d: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "MMM"
+        return f.string(from: d).capitalized
+    }
+    func weekdayLetter(_ d: Date, isToday: Bool) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR")
+        if isToday { f.dateFormat = "EEE"; return f.string(from: d).uppercased() }
+        f.dateFormat = "EEEEE"; return f.string(from: d).uppercased()
+    }
+    func timeStr(_ d: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "HH:mm"
+        return f.string(from: d)
     }
 
     var musicCard: some View {

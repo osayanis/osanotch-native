@@ -49,29 +49,29 @@ struct BatteryGlyph: View {
     }
 
     var body: some View {
-        HStack(spacing: 1.5) {
+        HStack(spacing: 1) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3.5).strokeBorder(.white.opacity(0.4), lineWidth: 1).frame(width: 26, height: 14)
-                RoundedRectangle(cornerRadius: 2.5).fill(color).frame(width: max(4, 24 * frac), height: 12).padding(.leading, 1)
+                RoundedRectangle(cornerRadius: 3).strokeBorder(.white.opacity(0.4), lineWidth: 0.9).frame(width: 21, height: 11)
+                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: max(3, 19 * frac), height: 9).padding(.leading, 1)
                 if charging {
-                    Image(systemName: "bolt.fill").font(.system(size: 8, weight: .bold)).foregroundColor(.black.opacity(0.75)).frame(width: 26)
+                    Image(systemName: "bolt.fill").font(.system(size: 6.5, weight: .bold)).foregroundColor(.black.opacity(0.75)).frame(width: 21)
                 } else {
-                    face.frame(width: 26, height: 14)
+                    face.frame(width: 21, height: 11)
                 }
             }
-            RoundedRectangle(cornerRadius: 1).fill(.white.opacity(0.4)).frame(width: 2, height: 5)
+            RoundedRectangle(cornerRadius: 1).fill(.white.opacity(0.4)).frame(width: 1.6, height: 4)
         }
     }
 
     // Visage : yeux + bouche qui sourit (plein), reste neutre (moyen) ou boude (faible).
     var face: some View {
         let ink = Color.black.opacity(0.72)
-        return VStack(spacing: 1.5) {
-            HStack(spacing: 3) {
-                Circle().fill(ink).frame(width: 1.8, height: 1.8)
-                Circle().fill(ink).frame(width: 1.8, height: 1.8)
+        return VStack(spacing: 1) {
+            HStack(spacing: 2.4) {
+                Circle().fill(ink).frame(width: 1.5, height: 1.5)
+                Circle().fill(ink).frame(width: 1.5, height: 1.5)
             }
-            Mouth(smile: percent > 45 ? 1 : (percent > 20 ? 0 : -1)).stroke(ink, style: StrokeStyle(lineWidth: 1, lineCap: .round)).frame(width: 7, height: 3)
+            Mouth(smile: percent > 45 ? 1 : (percent > 20 ? 0 : -1)).stroke(ink, style: StrokeStyle(lineWidth: 0.9, lineCap: .round)).frame(width: 5.5, height: 2.4)
         }
     }
 }

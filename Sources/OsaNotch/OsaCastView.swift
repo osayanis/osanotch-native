@@ -5,123 +5,113 @@ struct OsaCastView: View {
     @ObservedObject var model: AppModel
     var accent: Color
     var back: () -> Void
-
-    enum Mode { case choose, hosting, joining }
-    @State private var mode: Mode = .choose
-    @State private var entry: String = ""
     @ObservedObject var bridge: CastBridge
 
-    var watching: Bool { mode == .joining && (bridge.phase == .connected || bridge.phase == .live) }
-    var mascotMood: Mood { mode == .hosting ? .happy : .idle }
+    @State private var entry: String = ""
+
+    var hosting: Bool { !bridge.code.isEmpty }
+    var live: Bool { bridge.phase == .connected || bridge.phase == .live }
+    var watching: Bool { entry.count >= 4 && (bridge.phase == .connected || bridge.phase == .live) && bridge.code.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            TabBarView(model: model, accent: accent, dropHover: false, battery: model.data.battery, lowBat: (model.data.battery?.percent ?? 100) < 20)
+
             ZStack {
-                // Moteur WebRTC : caché (1×1) par défaut, plein cadre quand on regarde un cast
+                // Moteur WebRTC : caché (1×1) hors visionnage, plein cadre en direct.
                 HiddenWeb(webView: bridge.webView)
                     .frame(maxWidth: watching ? .infinity : 1, maxHeight: watching ? .infinity : 1)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                     .opacity(watching ? 1 : 0.02)
+
                 if !watching {
-                    switch mode {
-                    case .choose:  chooseView
-                    case .hosting: hostingView
-                    case .joining: joiningView
+                    HStack(spacing: 12) {
+                        diffuserBox
+                        regarderBox
                     }
+                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
                 }
             }
-            .padding(watching ? 10 : 0)
+            .padding(watching ? 12 : 0)
             Spacer(minLength: 0)
         }
         .onAppear {
             applyHeight()
-            // Le notch vient d'être rouvert : si un cast était en cours, on relance la vidéo.
-            if bridge.phase == .connected || bridge.phase == .live {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { bridge.resume() }
-            }
+            if live { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { bridge.resume() } }
         }
-        .onChange(of: mode) { _, _ in applyHeight() }
+        .onChange(of: watching) { _, _ in applyHeight() }
         .onChange(of: bridge.phase) { _, _ in applyHeight() }
     }
 
     func applyHeight() {
-        let h: CGFloat = watching ? 340 : (mode == .choose ? 192 : (mode == .hosting ? 248 : 236))
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = h }
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) { model.viewHeight = watching ? 360 : 210 }
     }
 
-    var header: some View {
-        HStack(spacing: 9) {
-            Button { if mode == .choose { back() } else { bridge.stop(); mode = .choose } } label: {
-                Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8)).padding(8).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if mode != .choose { OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 26) }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("OsaCast").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                Text(watching ? "En direct" : "Partage d'écran").font(.system(size: 9)).foregroundColor(watching ? .red : .white.opacity(0.4))
-            }
-            Spacer()
-        }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
-    }
-
-    var chooseView: some View {
-        HStack(spacing: 14) {
-            optionCard("Créer", "Diffuser l'écran", "plus.rectangle.on.rectangle") { bridge.host(); mode = .hosting }
-            OsaCharacter(model: model, mood: .idle, accent: accent, size: 64)
-            optionCard("Rejoindre", "Regarder", "eye.fill") { mode = .joining }
-        }.padding(.horizontal, 18).padding(.top, 6)
-    }
-
-    var hostingView: some View {
-        let live = bridge.phase == .connected || bridge.phase == .live
-        let err = bridge.phase == .error
-        return VStack(spacing: 10) {
-            VStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Circle().fill(live ? .red : accent).frame(width: 7, height: 7)
-                    Text(live ? "EN DIRECT" : "EN ATTENTE").font(.system(size: 10, weight: .bold)).foregroundColor(live ? .red : accent).tracking(2)
-                }
-                Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 34, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(7)
-                Text(err ? "Capture d'écran refusée" : "Partage ce code pour être regardé").font(.system(size: 10.5)).foregroundColor(err ? .red : .white.opacity(0.45))
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 18)
-            .background(RoundedRectangle(cornerRadius: 16).fill((live ? Color.red : accent).opacity(0.1)))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder((live ? Color.red : accent).opacity(0.4), lineWidth: 1))
-        }.padding(.horizontal, 22).padding(.top, 2)
-    }
-
-    var joiningView: some View {
-        VStack(spacing: 14) {
-            Text("Entre le code de la room").font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
-            TextField("", text: $entry)
-                .textFieldStyle(.plain).font(.system(size: 28, weight: .bold, design: .monospaced))
-                .multilineTextAlignment(.center).foregroundColor(.white).tracking(6)
-                .frame(height: 56).background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
-                .onChange(of: entry) { _, v in entry = String(v.uppercased().prefix(6)) }
-            Button { bridge.join(entry) } label: {
-                Text(bridge.phase == .connecting ? "Connexion…" : (entry.count == 6 ? "Regarder" : "Code à 6 lettres")).font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(entry.count == 6 ? .black : .white.opacity(0.4)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 13).fill(entry.count == 6 ? accent : .white.opacity(0.08)))
-            }.buttonStyle(.plain).disabled(entry.count != 6 || bridge.phase == .connecting)
-            if bridge.phase == .error { Text("Session introuvable").font(.system(size: 10)).foregroundColor(.red) }
-        }.padding(.horizontal, 26).padding(.top, 2)
-    }
-
-    func optionCard(_ title: String, _ sub: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(LinearGradient(colors: [accent.lighter(0.16), accent], startPoint: .top, endPoint: .bottom)).frame(width: 48, height: 48).shadow(color: accent.opacity(0.55), radius: 9, y: 3)
-                    Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white)
-                }
-                VStack(spacing: 2) {
-                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
-                    Text(sub).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
+    // ── Boîte Diffuser (comme la boîte OsaDrop) ──
+    var diffuserBox: some View {
+        Button { if !hosting { bridge.host() } } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                    .foregroundColor(hosting ? accent.opacity(0.5) : .white.opacity(0.2))
+                if hosting {
+                    VStack(spacing: 10) {
+                        Text("OSACAST").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                        Text(bridge.code).font(.system(size: 24, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(4)
+                        HStack(spacing: 5) {
+                            Circle().fill(live ? .red : .white.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(live ? "EN DIRECT" : "EN ATTENTE").font(.system(size: 9.5, weight: .bold)).foregroundColor(live ? .red : .white.opacity(0.5)).tracking(1)
+                        }
+                        if bridge.phase == .error {
+                            Text("Capture refusée").font(.system(size: 9.5)).foregroundColor(.red)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle().fill(.white.opacity(0.1)).frame(width: 48, height: 48)
+                            Image(systemName: "rectangle.on.rectangle").font(.system(size: 19)).foregroundColor(.white)
+                        }
+                        Text("Diffuser").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                        Text("Ton écran").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                    }
                 }
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 20)
-            .background(RoundedRectangle(cornerRadius: 18).fill(.white.opacity(0.055)))
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+            .frame(maxWidth: .infinity, maxHeight: 150)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
+    }
+
+    // ── Boîte Regarder (comme la réception OsaDrop) ──
+    var regarderBox: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                .foregroundColor(accent.opacity(0.5))
+            if bridge.phase == .connecting {
+                VStack(spacing: 10) {
+                    ProgressView().controlSize(.small).tint(accent)
+                    Text("Connexion…").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Text("REGARDER").font(.system(size: 10, weight: .bold)).foregroundColor(accent).tracking(1.5)
+                    TextField("CODE", text: $entry)
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 100, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)))
+                        .textFieldStyle(.plain)
+                        .foregroundColor(.white)
+                        .onChange(of: entry) { _, new in
+                            entry = String(new.uppercased().prefix(6))
+                            if entry.count == 6 { bridge.join(entry) }
+                        }
+                    Text(bridge.phase == .error ? "Session introuvable" : "Entrer le code")
+                        .font(.system(size: 10)).foregroundColor(bridge.phase == .error ? .red : .white.opacity(0.5))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: 150)
     }
 }

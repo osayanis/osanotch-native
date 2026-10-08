@@ -11,18 +11,19 @@ final class AppModel: ObservableObject {
     @Published var data = SystemData()
     @Published var notchW: CGFloat = 180   // taille réelle de l'encoche
     @Published var notchH: CGFloat = 32
+    @Published var viewHeight: CGFloat = 200   // hauteur ajustée au contenu (drop/cast)
 }
 
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat) -> CGSize {
         if !expanded { return CGSize(width: playing ? notchW + 120 : notchW, height: notchH) }
         switch view {
         case .home:  return CGSize(width: 480, height: 210)
         case .notes: return CGSize(width: 440, height: 300)
-        case .drop:  return CGSize(width: 460, height: 340)
-        case .cast:  return CGSize(width: 520, height: 360)
+        case .drop:  return CGSize(width: 460, height: vh)
+        case .cast:  return CGSize(width: 520, height: vh)
         }
     }
     static func homeRect(_ sf: CGRect) -> CGRect { CGRect(x: sf.midX - 240, y: sf.maxY - 210, width: 480, height: 210) }
@@ -121,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !Island.homeRect(sf).insetBy(dx: -8, dy: -8).contains(p) { model.expanded = false }
         }
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
         panel.ignoresMouseEvents = !shapeRect.contains(p)
     }

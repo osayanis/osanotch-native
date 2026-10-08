@@ -23,6 +23,12 @@ struct OsaCastView: View {
             }
             Spacer(minLength: 0)
         }
+        .onAppear { applyHeight() }
+        .onChange(of: mode) { _, _ in applyHeight() }
+    }
+    func applyHeight() {
+        let h: CGFloat = mode == .choose ? 176 : (mode == .hosting ? 252 : 244)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.84)) { model.viewHeight = h }
     }
 
     var header: some View {

@@ -6,6 +6,7 @@ import WebKit
 final class DropBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     enum Phase: Equatable { case idle, loading, waiting, connecting, connected, transferring(Double), done(String), failed }
     @Published var phase: Phase = .loading
+    @Published var lastReceivedURL: URL?
 
     let webView: WKWebView
     private var ready = false
@@ -38,7 +39,7 @@ final class DropBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
         set(.waiting)
         run { self.webView.evaluateJavaScript("osaBridge.receive(\(Self.js(code)))", completionHandler: nil) }
     }
-    func reset() { set(.idle); load() }   // recharge la page = état propre pour la prochaine fois
+    func reset() { DispatchQueue.main.async { self.lastReceivedURL = nil }; set(.idle); load() }
 
     private func run(_ block: @escaping () -> Void) { if ready { block() } else { pending = block } }
     private func set(_ p: Phase) { DispatchQueue.main.async { self.phase = p } }
@@ -63,7 +64,8 @@ final class DropBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
                 if let name = d["name"] as? String, let b64 = d["b64"] as? String, let data = Data(base64Encoded: b64) {
                     let dest = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent(name)
                     try? data.write(to: dest)
-                    self.phase = .done("Reçu dans Téléchargements ✓")
+                    self.lastReceivedURL = dest
+                    self.phase = .done("Reçu ✓")
                 } else { self.phase = .failed }
             case "error": self.phase = .failed
             default: break

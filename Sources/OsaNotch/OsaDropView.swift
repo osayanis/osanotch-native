@@ -10,7 +10,7 @@ struct OsaDropView: View {
     @State private var code: String = ""
     @State private var entry: String = ""
     @State private var dropActive = false
-    @StateObject private var bridge = DropBridge()
+    @ObservedObject var bridge: DropBridge
 
     static func gen() -> String { String((0..<4).map { _ in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()! }) }
 

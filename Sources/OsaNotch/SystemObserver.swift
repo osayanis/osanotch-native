@@ -1,18 +1,36 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
+import CoreGraphics
 import Combine
 
 class SystemObserver: ObservableObject {
     @Published var volume: Float = 0.5
     @Published var showVolumeHUD: Bool = false
+    @Published var brightness: Float = 0.5
+    @Published var showBrightnessHUD: Bool = false
 
     private var defaultOutputDeviceID: AudioDeviceID = 0
     private var volumeTimer: Timer?
+    private var brightnessTimer: Timer?
+    private var lastBrightness: Float = -1
+    private var osdSuppressed = false
+
+    // DisplayServicesGetBrightness (framework privé) chargé dynamiquement → pas de bridging header.
+    private typealias GetBrightnessFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+    private let getBrightness: GetBrightnessFn? = {
+        guard let h = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW),
+              let sym = dlsym(h, "DisplayServicesGetBrightness") else { return nil }
+        return unsafeBitCast(sym, to: GetBrightnessFn.self)
+    }()
 
     init() {
         setupAudio()
+        suppressNativeOSD()
+        startBrightnessPolling()
     }
+
+    deinit { restoreNativeOSD() }
 
     func setupAudio() {
         var propertySize: UInt32 = UInt32(MemoryLayout<AudioDeviceID>.size)
@@ -71,12 +89,60 @@ class SystemObserver: ObservableObject {
     }
 
     func showHUD() {
+        suppressNativeOSD()          // au cas où OSDUIHelper serait réapparu
+        showBrightnessHUD = false
         showVolumeHUD = true
         volumeTimer?.invalidate()
-        volumeTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+        volumeTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
             self?.showVolumeHUD = false
         }
     }
+
+    // ── Luminosité ──────────────────────────────────────────────
+    private func startBrightnessPolling() {
+        guard getBrightness != nil else { return }
+        brightnessTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+            self?.pollBrightness()
+        }
+        pollBrightness(initial: true)
+    }
+
+    private func pollBrightness(initial: Bool = false) {
+        guard let fn = getBrightness else { return }
+        var b: Float = 0
+        guard fn(CGMainDisplayID(), &b) == 0, b >= 0, b <= 1 else { return }
+        if initial { lastBrightness = b; brightness = b; return }
+        if abs(b - lastBrightness) > 0.001 {
+            lastBrightness = b
+            brightness = b
+            showBrightnessHUDNow()
+        }
+    }
+
+    private func showBrightnessHUDNow() {
+        suppressNativeOSD()
+        showVolumeHUD = false
+        showBrightnessHUD = true
+        brightnessTimerHide?.invalidate()
+        brightnessTimerHide = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
+            self?.showBrightnessHUD = false
+        }
+    }
+    private var brightnessTimerHide: Timer?
+
+    // ── Supprimer l'OSD natif de macOS (OSDUIHelper) ─────────────
+    // On SUSPEND le process (SIGSTOP) : le volume/la luminosité changent toujours,
+    // mais l'overlay natif ne se dessine plus. Restauré (SIGCONT) à la fermeture.
+    private func osd(_ signal: String) {
+        let p = Process()
+        p.launchPath = "/usr/bin/killall"
+        p.arguments = [signal, "OSDUIHelper"]
+        p.standardError = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        try? p.run()
+    }
+    func suppressNativeOSD() { osd("-STOP"); osdSuppressed = true }
+    func restoreNativeOSD() { if osdSuppressed { osd("-CONT"); osdSuppressed = false } }
 }
 
 import Network

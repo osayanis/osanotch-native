@@ -44,7 +44,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, volHUD: model.sysObs.showVolumeHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
 
     var body: some View {
         let exp = model.expanded
@@ -62,6 +62,8 @@ struct IslandView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.82), value: model.expanded)
         .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.view)
         .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.viewHeight)
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .ignoresSafeArea()
     }
 
@@ -78,17 +80,56 @@ struct IslandView: View {
         }
     }
 
-    var collapsedView: some View {
-        HStack(spacing: 0) {
-            if model.sysObs.showVolumeHUD {
-                Image(systemName: "speaker.wave.3.fill").font(.system(size: 11)).foregroundColor(.white).padding(.leading, 12).padding(.trailing, 8)
-                GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * CGFloat(model.sysObs.volume))) } }.frame(height: 4).padding(.trailing, 16)
-            }
-            else if playing { artwork(18, 5); Spacer(); Waveform(color: data.accent, active: true) }
-            else { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
+    var hudActive: Bool { model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD }
+
+    @ViewBuilder var collapsedView: some View {
+        if hudActive { hudView }
+        else if playing {
+            HStack(spacing: 0) { artwork(18, 5); Spacer(); Waveform(color: data.accent, active: true) }
+                .padding(.horizontal, 12)
+                .frame(width: model.notchW + 120, height: model.notchH)
         }
-        .padding(.horizontal, playing || model.sysObs.showVolumeHUD ? 12 : 0)
-        .frame(width: model.sysObs.showVolumeHUD ? model.notchW + 140 : (playing ? model.notchW + 120 : model.notchW), height: model.notchH)
+        else {
+            HStack(spacing: 0) { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
+                .frame(width: model.notchW, height: model.notchH)
+        }
+    }
+
+    func volumeIcon(_ v: Float) -> String {
+        if v <= 0.001 { return "speaker.slash.fill" }
+        if v < 0.34 { return "speaker.wave.1.fill" }
+        if v < 0.67 { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
+    }
+
+    // HUD volume / luminosité : pastille blanche qui descend sous l'encoche.
+    var hudView: some View {
+        let isVol = model.sysObs.showVolumeHUD
+        let value = CGFloat(isVol ? model.sysObs.volume : model.sysObs.brightness)
+        let icon = isVol ? volumeIcon(model.sysObs.volume) : "sun.max.fill"
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0).frame(height: model.notchH)
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 20)
+                    .contentTransition(.symbolEffect(.replace))
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.16))
+                        Capsule().fill(Color.white)
+                            .frame(width: max(5, g.size.width * value))
+                    }
+                }
+                .frame(height: 5)
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 30)
+        }
+        .frame(width: model.notchW + 190, height: model.notchH + 30)
+        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.volume)
+        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.brightness)
     }
 
     // ── Home centré ──

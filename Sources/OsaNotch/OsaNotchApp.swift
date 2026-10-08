@@ -48,8 +48,12 @@ final class AppModel: ObservableObject {
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, volHUD: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
-        if !expanded { return CGSize(width: volHUD ? notchW + 140 : (playing ? notchW + 120 : notchW), height: notchH) }
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
+        if !expanded {
+            // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
+            if hud { return CGSize(width: notchW + 190, height: notchH + 30) }
+            return CGSize(width: playing ? notchW + 120 : notchW, height: notchH)
+        }
         _ = sw
         switch view {
         case .home:         return CGSize(width: 480, height: 185)
@@ -143,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return e }
             let p = NSEvent.mouseLocation
             guard let sf = (self.panel.screen ?? NSScreen.main)?.frame else { return e }
-            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, volHUD: self.model.sysObs.showVolumeHUD, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
+            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
             let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
             
             if shapeRect.contains(p) {
@@ -190,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localServer.start()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        model.sysObs.restoreNativeOSD()   // ne jamais laisser l'OSD natif figé
+    }
+
     func closeAll() {
         model.view = .home
         model.expanded = false
@@ -206,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trigW: CGFloat = 300, trigH: CGFloat = 44
         let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, volHUD: model.sysObs.showVolumeHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
 
         if !model.expanded {

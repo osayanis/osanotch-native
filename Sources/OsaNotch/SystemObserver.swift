@@ -2,6 +2,7 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 import CoreGraphics
+import AppKit
 import Combine
 
 class SystemObserver: ObservableObject {
@@ -15,6 +16,10 @@ class SystemObserver: ObservableObject {
     private var brightnessTimer: Timer?
     private var lastBrightness: Float = -1
     private var osdSuppressed = false
+    // Fenêtre pendant laquelle un changement de luminosité est considéré comme volontaire
+    // (touche F1/F2 pressée récemment) → on affiche le HUD seulement dans ce cas, jamais
+    // pour l'ajustement automatique par le capteur de lumière.
+    private var brightnessKeyUntil: TimeInterval = 0
 
     // DisplayServicesGetBrightness (framework privé) chargé dynamiquement → pas de bridging header.
     private typealias GetBrightnessFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
@@ -27,6 +32,7 @@ class SystemObserver: ObservableObject {
     init() {
         setupAudio()
         suppressNativeOSD()
+        startBrightnessKeyWatch()
         startBrightnessPolling()
     }
 
@@ -115,8 +121,27 @@ class SystemObserver: ObservableObject {
         if abs(b - lastBrightness) > 0.001 {
             lastBrightness = b
             brightness = b
-            showBrightnessHUDNow()
+            // HUD seulement si l'utilisateur vient d'appuyer sur F1/F2 — pas pour l'auto-réglage.
+            if Date().timeIntervalSinceReferenceDate < brightnessKeyUntil {
+                showBrightnessHUDNow()
+            }
         }
+    }
+
+    // Détecte les touches de luminosité (évènements HID "system defined", sous-type 8).
+    private func startBrightnessKeyWatch() {
+        let handler: (NSEvent) -> Void = { [weak self] e in
+            guard e.subtype.rawValue == 8 else { return }
+            let keyCode = Int((e.data1 & 0xFFFF0000) >> 16)
+            let keyFlags = Int(e.data1 & 0x0000FFFF)
+            let keyDown = ((keyFlags & 0xFF00) >> 8) == 0x0A
+            // NX_KEYTYPE_BRIGHTNESS_UP = 2, NX_KEYTYPE_BRIGHTNESS_DOWN = 3
+            if keyDown && (keyCode == 2 || keyCode == 3) {
+                self?.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
+            }
+        }
+        NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { handler($0) }
+        NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { handler($0); return $0 }
     }
 
     private func showBrightnessHUDNow() {

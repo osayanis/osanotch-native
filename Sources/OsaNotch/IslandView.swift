@@ -45,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH) }
 
     var body: some View {
         let exp = model.expanded
@@ -81,7 +81,7 @@ struct IslandView: View {
             else { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
         }
         .padding(.horizontal, playing ? 12 : 0)
-        .frame(width: Island.collapsedW(playing), height: Island.collapsedH)
+        .frame(width: playing ? model.notchW + 120 : model.notchW, height: model.notchH)
     }
 
     // ── Home centré ──

@@ -9,16 +9,15 @@ final class AppModel: ObservableObject {
     @Published var expanded: Bool = false
     @Published var view: AppView = .home
     @Published var data = SystemData()
-    @Published var screenW: CGFloat = 1440
+    @Published var notchW: CGFloat = 180   // taille réelle de l'encoche
+    @Published var notchH: CGFloat = 32
 }
 
 enum Island {
-    static let collapsedH: CGFloat = 34
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func collapsedW(_ playing: Bool) -> CGFloat { playing ? 300 : 186 }
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool) -> CGSize {
-        if !expanded { return CGSize(width: collapsedW(playing), height: collapsedH) }
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat) -> CGSize {
+        if !expanded { return CGSize(width: playing ? notchW + 120 : notchW, height: notchH) }
         switch view {
         case .home:  return CGSize(width: 480, height: 210)
         case .notes: return CGSize(width: 440, height: 300)
@@ -51,16 +50,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !others.isEmpty { NSApp.terminate(nil); return }
         NSApp.setActivationPolicy(.accessory)
 
-        let screen = NSScreen.main ?? NSScreen.screens.first!
+        let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first!
         let sf = screen.frame
-        model.screenW = sf.width
+        // Taille réelle de l'encoche physique (comme coucou)
+        if screen.safeAreaInsets.top > 0 {
+            model.notchH = screen.safeAreaInsets.top
+            model.notchW = sf.width - (screen.auxiliaryTopLeftArea?.width ?? 0) - (screen.auxiliaryTopRightArea?.width ?? 0)
+        }
         let frame = NSRect(x: sf.midX - Island.winW / 2, y: sf.maxY - Island.winH, width: Island.winW, height: Island.winH)
 
         panel = IslandPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel())) // au-dessus de la barre de menus (îlot centré uniquement)
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 3) // juste au-dessus de la barre de menus (technique coucou)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -118,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !Island.homeRect(sf).insetBy(dx: -8, dy: -8).contains(p) { model.expanded = false }
         }
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, notchW: model.notchW, notchH: model.notchH)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
         panel.ignoresMouseEvents = !shapeRect.contains(p)
     }

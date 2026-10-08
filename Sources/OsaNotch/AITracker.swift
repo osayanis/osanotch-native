@@ -24,7 +24,6 @@ class AITracker: ObservableObject {
     }
     
     private var noGenTicks = 0
-    private var currentTask: String? = nil
 
     private func checkActiveAIs() {
         guard AXIsProcessTrusted() else { return }
@@ -39,8 +38,7 @@ class AITracker: ObservableObject {
         ]
         
         var newlyGeneratingAI: String? = nil
-        var newlyFoundTask: String? = nil
-        
+
         for app in NSWorkspace.shared.runningApplications {
             let bundleId = app.bundleIdentifier ?? ""
             let isBrowser = browsers.contains(bundleId)
@@ -62,13 +60,6 @@ class AITracker: ObservableObject {
             
             if let name = aiApps[bundleId] {
                 detectingAI = name
-                if name == "Antigravity" {
-                    if let agyTask = getAntigravityTask() {
-                        newlyGeneratingAI = "Antigravity"
-                        newlyFoundTask = agyTask
-                        break
-                    }
-                }
             } else if isBrowser {
                 if title.contains("Claude") { detectingAI = "Claude" }
                 else if title.contains("Gemini") { detectingAI = "Gemini" }
@@ -90,10 +81,9 @@ class AITracker: ObservableObject {
                 }
             }
             
-            if let ai = detectingAI, let task = scanForGenerating(window) {
+            if let ai = detectingAI, detectGenerating(window) {
                 newlyGeneratingAI = ai
-                newlyFoundTask = task
-                break // We found one generating, no need to check others
+                break // une IA en génération suffit
             }
         }
 
@@ -105,22 +95,14 @@ class AITracker: ObservableObject {
                 self.currentAI = newlyGeneratingAI
                 self.isGenerating = true
                 self.wasGenerating = true
-                
-                // Si la tâche a changé et qu'elle est pertinente
-                if let task = newlyFoundTask, task != self.currentTask {
-                    self.currentTask = task
-                    let cleanName = newlyGeneratingAI ?? "L'IA"
-                    self.onFinish?("\(cleanName) : \(task)")
-                }
             } else {
                 self.noGenTicks += 1
-                // Il faut 3 ticks (3x2s = 6s) sans génération pour valider la fin
+                // Il faut 3 ticks (3×2 s = 6 s) sans génération pour valider la fin.
                 if self.wasGenerating && self.noGenTicks >= 3 {
                     if let finishedAI = self.currentAI {
-                        self.onFinish?("\(finishedAI) a fini de générer.")
+                        self.onFinish?("\(finishedAI) a terminé ✅")
                     }
                     self.currentAI = nil
-                    self.currentTask = nil
                     self.isGenerating = false
                     self.wasGenerating = false
                 }
@@ -129,87 +111,30 @@ class AITracker: ObservableObject {
         }
     }
     
-    // Indices textuels d'une génération en cours (bouton Stop, spinner, "interrupt"…).
-    private static let genKeywords = [
-        "stop generating", "stop response", "stop streaming", "génération en cours",
-        "generating", "thinking", "esc to interrupt", "interrupt", "cancel generation",
-        "arrêter la génération", "répond", "is working", "running…", "en cours d'exécution",
-        "claude is thinking", "agent is thinking", "running task", "[thought]", "tool call",
-        "tool is running", "task id",
-        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", // Spinners CLI
-        "analyzing", "searching", "checking", "reading", "patching", "creating", "building", // Antigravity toolActions
-        "call:" // Antigravity tool call syntax
+    // Signaux SPÉCIFIQUES d'une génération en cours — présents uniquement pendant que
+    // l'IA travaille (pas dans la barre d'état inactive type "⏵⏵ auto mode on").
+    private static let genSignals = [
+        "esc to interrupt",            // Claude Code (en train de générer)
+        "stop generating", "stop responding", "stop response", "stop streaming", // web Claude/ChatGPT/Gemini
+        "arrêter la génération", "génération en cours",
+        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", // spinners braille CLI
+        "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"
     ]
 
-        private func getAntigravityTask() -> String? {
-        let fm = FileManager.default
-        let brainURL = fm.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/antigravity/brain")
-        guard let enumerator = fm.enumerator(at: brainURL, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return nil }
-        
-        var latestFile: URL?
-        var latestDate = Date.distantPast
-        
-        for case let fileURL as URL in enumerator {
-            if fileURL.lastPathComponent == "transcript.jsonl" {
-                if let attr = try? fm.attributesOfItem(atPath: fileURL.path),
-                   let modDate = attr[.modificationDate] as? Date {
-                    if modDate > latestDate {
-                        latestDate = modDate
-                        latestFile = fileURL
-                    }
-                }
-            }
-        }
-        
-        guard let file = latestFile, let data = try? Data(contentsOf: file) else { return nil }
-        let str = String(decoding: data, as: UTF8.self)
-        let lines = str.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        for line in lines.reversed().prefix(20) {
-            if let range = line.range(of: "\"toolAction\":\"\\\"") {
-                let rest = line[range.upperBound...]
-                if let endRange = rest.range(of: "\\\"\"") {
-                    var action = String(rest[..<endRange.lowerBound])
-                    if action.count > 40 { action = String(action.prefix(37)) + "..." }
-                    return "※ " + action
-                }
-            } else if let range = line.range(of: "\"toolAction\":\"") {
-                let rest = line[range.upperBound...]
-                if let endRange = rest.range(of: "\"") {
-                    var action = String(rest[..<endRange.lowerBound])
-                    if action.count > 40 { action = String(action.prefix(37)) + "..." }
-                    return "※ " + action
-                }
-            }
-        }
-        return nil
-    }
-
-    private func scanForGenerating(_ axWindow: AXUIElement) -> String? {
-        var foundTask: String? = nil
-        scanAXTree(element: axWindow, depth: 0, maxDepth: 22) { role, title, desc, val in
-            var textParts: [String] = []
-            if let t = title, !t.isEmpty { textParts.append(t) }
-            if let d = desc, !d.isEmpty { textParts.append(d) }
-            if let v = val, !v.isEmpty {
-                let suffix = String(v.suffix(1000))
-                textParts.append(suffix)
-            }
-            let text = textParts.joined(separator: "\n")
+    // L'IA est-elle en train de générer ? (true dès qu'un signal est trouvé)
+    private func detectGenerating(_ axWindow: AXUIElement) -> Bool {
+        var gen = false
+        scanAXTree(element: axWindow, depth: 0, maxDepth: 22) { _, title, desc, val in
+            var parts: [String] = []
+            if let t = title, !t.isEmpty { parts.append(t) }
+            if let d = desc, !d.isEmpty { parts.append(d) }
+            if let v = val, !v.isEmpty { parts.append(String(v.suffix(1200))) }
+            let text = parts.joined(separator: "\n").lowercased()
             if text.isEmpty { return false }
-            
-            let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            for line in lines.reversed() {
-                let lowerLine = line.lowercased()
-                if Self.genKeywords.contains(where: { lowerLine.contains($0) }) {
-                    var clean = line
-                    if clean.count > 40 { clean = String(clean.prefix(37)) + "..." }
-                    foundTask = clean
-                    return true // stop scanning
-                }
-            }
+            if Self.genSignals.contains(where: { text.contains($0) }) { gen = true; return true }
             return false
         }
-        return foundTask
+        return gen
     }
 
     private func scanAXTree(element: AXUIElement, depth: Int = 0, maxDepth: Int = 22, block: (String, String?, String?, String?) -> Bool) {

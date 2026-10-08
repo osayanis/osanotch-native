@@ -208,23 +208,50 @@ struct IslandView: View {
         .frame(width: size.width, height: size.height)
     }
 
-    // Accueil au repos : mascotte + raccourcis.
+    // Accueil au repos : mascotte + raccourcis (et notifications si présentes).
     var idleHome: some View {
         VStack(spacing: 0) {
-            OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
-                .padding(.top, 4) // Reduced top spacing
-                .padding(.bottom, -2) // Pull text closer
-            Text(model.dropHover ? "Dépose ton fichier" : "Salut Yanis")
-                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
-            Text("OsaLabs")
-                .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
-            Spacer(minLength: 4) // Reduced spacing
+            if !model.notifications.isEmpty && !model.dropHover {
+                HStack(spacing: 16) {
+                    VStack(spacing: -2) {
+                        OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54)
+                        Text("OsaLabs").font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                    }
+                    .frame(width: 80)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Dernières notifications").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                        ForEach(model.notifications.prefix(2)) { n in
+                            HStack(alignment: .top, spacing: 6) {
+                                Circle().fill(data.accent).frame(width: 5, height: 5).padding(.top, 4)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(n.text).font(.system(size: 11, weight: .medium)).foregroundColor(.white).lineLimit(2)
+                                    Text(relTime(n.date)).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
+                                }
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 4)
+            } else {
+                OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
+                    .padding(.top, 4)
+                    .padding(.bottom, -2)
+                Text(model.dropHover ? "Dépose ton fichier" : "Salut Yanis")
+                    .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
+                Text("OsaLabs")
+                    .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
+            }
+            
+            Spacer(minLength: 4)
             HStack(spacing: 8) {
-                // Now truly integrated, opening the native party view instead of redirecting!
                 appTile("Party", "music.note", data.services.party) { model.view = .party }
                 appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }
                 appTile("Cast", "play.rectangle.fill", data.services.cast) { model.view = .cast }
-            }.padding(.horizontal, 16).padding(.bottom, 8) // Reduced bottom spacing
+            }.padding(.horizontal, 16).padding(.bottom, 8)
         }
     }
 

@@ -132,39 +132,128 @@ struct IslandView: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.brightness)
     }
 
-    // ── Home centré ──
+    // ── Home ──
     var homeView: some View {
         VStack(spacing: 0) {
             TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
+            if playing && !model.dropHover { playerView } else { idleHome }
+        }
+        .frame(width: size.width, height: size.height)
+    }
 
+    // Accueil au repos : mascotte + raccourcis.
+    var idleHome: some View {
+        VStack(spacing: 0) {
             Spacer(minLength: 2)
             OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
-            Text(model.dropHover ? "Dépose ton fichier" : (playing ? (data.music?.title ?? "") : "Salut Yanis"))
+            Text(model.dropHover ? "Dépose ton fichier" : "Salut Yanis")
                 .font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).padding(.horizontal, 24)
-            Text(playing && !model.dropHover ? (data.music?.artist ?? "") : "OsaLabs")
+            Text("OsaLabs")
                 .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
             Spacer(minLength: 6)
-
-            if playing {
-                scrubber.padding(.horizontal, 44)
-                HStack(spacing: 32) {
-                    ctrl("backward.fill", 16) { SystemData.controlMusic("previous track") }
-                    Button { SystemData.controlMusic("playpause") } label: {
-                        ZStack { Circle().fill(.white).frame(width: 38, height: 38).shadow(color: data.accent.opacity(0.7), radius: 8, y: 2)
-                            Image(systemName: "pause.fill").font(.system(size: 15)).foregroundColor(.black) }
-                    }.buttonStyle(.plain)
-                    ctrl("forward.fill", 16) { SystemData.controlMusic("next track") }
-                }.padding(.top, 8)
-                Spacer(minLength: 8)
-            }
-
             HStack(spacing: 8) {
                 appTile("Party", "music.note", data.services.party) { NSWorkspace.shared.open(URL(string: "https://osaparty.osalabs.fr")!) }
                 appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }
                 appTile("Cast", "play.rectangle.fill", data.services.cast) { model.view = .cast }
             }.padding(.horizontal, 16).padding(.bottom, 14)
         }
-        .frame(width: size.width, height: size.height)
+    }
+
+    // ── Lecteur musique : pochette à gauche, paroles + barre + contrôles à droite ──
+    var playerView: some View {
+        HStack(alignment: .center, spacing: 16) {
+            artwork(120, 16)
+                .shadow(color: data.accent.opacity(0.5), radius: 14, y: 5)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(data.music?.title ?? "")
+                    .font(.system(size: 15.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                Text(data.music?.artist ?? "")
+                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
+                    .padding(.top, 1)
+
+                Spacer(minLength: 6)
+                lyricsBlock
+                Spacer(minLength: 6)
+
+                TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
+                    playerScrubber(now: ctx.date)
+                }
+
+                HStack(spacing: 26) {
+                    ctrl("backward.fill", 15) { SystemData.controlMusic("previous track") }
+                    Button { SystemData.controlMusic("playpause") } label: {
+                        ZStack {
+                            Circle().fill(.white).frame(width: 40, height: 40).shadow(color: data.accent.opacity(0.7), radius: 9, y: 2)
+                            Image(systemName: "pause.fill").font(.system(size: 16)).foregroundColor(.black)
+                        }
+                    }.buttonStyle(.plain)
+                    ctrl("forward.fill", 15) { SystemData.controlMusic("next track") }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 16)
+    }
+
+    // Position lue + temps écoulé depuis la lecture → progression fluide entre deux sondages.
+    func livePosition(_ now: Date) -> Double {
+        guard let m = data.music else { return 0 }
+        var p = m.position
+        if m.playing { p += now.timeIntervalSince(data.positionSampledAt) }
+        return m.duration > 0 ? min(p, m.duration) : p
+    }
+
+    @ViewBuilder var lyricsBlock: some View {
+        if data.lyrics.isEmpty {
+            // Pas de paroles trouvées : petit égaliseur discret pour ne pas laisser de vide.
+            HStack { Spacer(); Waveform(color: data.accent, active: true); Spacer() }
+                .frame(maxWidth: .infinity)
+        } else {
+            TimelineView(.periodic(from: .now, by: 0.4)) { ctx in
+                let idx = currentLyric(at: livePosition(ctx.date))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(idx >= 0 ? data.lyrics[idx].text : "♪ ♪ ♪")
+                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        .lineLimit(1).truncationMode(.tail)
+                    Text(idx + 1 < data.lyrics.count ? data.lyrics[idx + 1].text : " ")
+                        .font(.system(size: 11.5)).foregroundColor(.white.opacity(0.32))
+                        .lineLimit(1).truncationMode(.tail)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(.easeInOut(duration: 0.3), value: idx)
+            }
+        }
+    }
+
+    func currentLyric(at pos: Double) -> Int {
+        var idx = -1
+        for (i, l) in data.lyrics.enumerated() { if l.t <= pos + 0.2 { idx = i } else { break } }
+        return idx
+    }
+
+    func timeStr(_ s: Double) -> String {
+        let t = max(0, Int(s)); return String(format: "%d:%02d", t / 60, t % 60)
+    }
+
+    func playerScrubber(now: Date) -> some View {
+        let dur = data.music?.duration ?? 0
+        let pos = livePosition(now)
+        let prog = dur > 0 ? min(1, pos / dur) : 0
+        return VStack(spacing: 4) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.14))
+                    Capsule().fill(data.accent).frame(width: max(0, g.size.width * prog))
+                }
+            }.frame(height: 4)
+            HStack {
+                Text(timeStr(pos)).font(.system(size: 9, weight: .medium)).monospacedDigit().foregroundColor(.white.opacity(0.4))
+                Spacer()
+                Text("-" + timeStr(dur - pos)).font(.system(size: 9, weight: .medium)).monospacedDigit().foregroundColor(.white.opacity(0.4))
+            }
+        }
     }
 
     var notesView: some View {
@@ -180,12 +269,6 @@ struct IslandView: View {
     @ViewBuilder func artwork(_ s: CGFloat, _ radius: CGFloat) -> some View {
         if let a = data.artwork { Image(nsImage: a).resizable().frame(width: s, height: s).clipShape(RoundedRectangle(cornerRadius: radius)) }
         else { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.08)).frame(width: s, height: s) }
-    }
-
-    var scrubber: some View {
-        let dur = data.music?.duration ?? 0, pos = data.music?.position ?? 0
-        let prog = dur > 0 ? min(1, pos / dur) : 0
-        return GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(.white.opacity(0.14)); Capsule().fill(data.accent).frame(width: max(0, g.size.width * prog)) } }.frame(height: 3)
     }
 
     func ctrl(_ icon: String, _ sz: CGFloat, _ action: @escaping () -> Void) -> some View {

@@ -11,6 +11,7 @@ struct BatteryInfo: Equatable { var percent: Int; var charging: Bool }
 struct AirpodsInfo: Equatable { var name: String; var left: Int?; var right: Int?; var caseLvl: Int?; var single: Int? }
 struct EventInfo: Equatable { var title: String; var when: String }
 struct ServicesInfo: Equatable { var party = false; var drop = false; var cast = false }
+struct LyricLine: Equatable { var t: Double; var text: String }
 
 final class SystemData: ObservableObject {
     @Published var battery: BatteryInfo?
@@ -20,6 +21,8 @@ final class SystemData: ObservableObject {
     @Published var services = ServicesInfo()
     @Published var artwork: NSImage?
     @Published var accent: Color = Color(red: 0.42, green: 0.55, blue: 1.0)
+    @Published var lyrics: [LyricLine] = []
+    @Published var positionSampledAt = Date()   // instant où `music.position` a été lu → interpolation fluide
 
     private let q = DispatchQueue(label: "osa.system", qos: .utility)
     private var timers: [Timer] = []
@@ -73,10 +76,12 @@ final class SystemData: ObservableObject {
             var info = MusicInfo(playing: p[0] == "playing", title: p[1], artist: p[2], source: p[3],
                                  artworkURL: nil, position: Double(p[4]) ?? 0, duration: Double(p[5]) ?? 0)
             let key = "\(info.artist)|\(info.title)"
-            DispatchQueue.main.async { self.music = info }
+            DispatchQueue.main.async { self.music = info; self.positionSampledAt = Date() }
             if key != self.lastArtKey {
                 self.lastArtKey = key
                 self.fetchArtwork(artist: info.artist, title: info.title)
+                DispatchQueue.main.async { self.lyrics = [] }
+                self.fetchLyrics(artist: info.artist, title: info.title, duration: info.duration)
             }
             _ = info
         }
@@ -95,6 +100,62 @@ final class SystemData: ObservableObject {
             let col = Self.vibrantColor(img)
             DispatchQueue.main.async { self.artwork = img; if let col { self.accent = col } }
         }.resume()
+    }
+
+    // MARK: Paroles synchronisées (LRCLIB, gratuit, sans clé)
+    private func fetchLyrics(artist: String, title: String, duration: Double) {
+        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "" }
+        // /get exige une durée proche ; on retombe sur /search sinon.
+        let getURL = "https://lrclib.net/api/get?artist_name=\(enc(artist))&track_name=\(enc(title))&duration=\(Int(duration.rounded()))"
+        let searchURL = "https://lrclib.net/api/search?track_name=\(enc(title))&artist_name=\(enc(artist))"
+        let myKey = "\(artist)|\(title)"
+
+        func parseAndSet(_ synced: String) {
+            let lines = Self.parseLRC(synced)
+            guard !lines.isEmpty else { return }
+            DispatchQueue.main.async {
+                // N'applique que si le morceau courant est toujours le même.
+                if self.lastArtKey == myKey { self.lyrics = lines }
+            }
+        }
+        func req(_ s: String) -> URLRequest {
+            var r = URLRequest(url: URL(string: s)!)
+            r.setValue("OsaNotch (https://osalabs.fr)", forHTTPHeaderField: "User-Agent")
+            return r
+        }
+
+        URLSession.shared.dataTask(with: req(getURL)) { data, resp, _ in
+            if let data, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let synced = j["syncedLyrics"] as? String, !synced.isEmpty {
+                parseAndSet(synced); return
+            }
+            // fallback recherche
+            URLSession.shared.dataTask(with: req(searchURL)) { data, _, _ in
+                guard let data, let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+                if let synced = arr.compactMap({ $0["syncedLyrics"] as? String }).first(where: { !$0.isEmpty }) {
+                    parseAndSet(synced)
+                }
+            }.resume()
+        }.resume()
+    }
+
+    // Parse le format LRC : "[mm:ss.xx] texte" (plusieurs horodatages possibles par ligne).
+    static func parseLRC(_ raw: String) -> [LyricLine] {
+        var out: [LyricLine] = []
+        for line in raw.components(separatedBy: .newlines) {
+            guard let close = line.firstIndex(of: "]") else { continue }
+            let text = String(line[line.index(after: close)...]).trimmingCharacters(in: .whitespaces)
+            var rest = Substring(line)
+            while let open = rest.firstIndex(of: "["), let end = rest.firstIndex(of: "]"), open < end {
+                let stamp = rest[rest.index(after: open)..<end]
+                let comps = stamp.split(separator: ":")
+                if comps.count == 2, let m = Double(comps[0]), let s = Double(comps[1]) {
+                    out.append(LyricLine(t: m * 60 + s, text: text))
+                }
+                rest = rest[rest.index(after: end)...]
+            }
+        }
+        return out.filter { !$0.text.isEmpty }.sorted { $0.t < $1.t }
     }
 
     // MARK: AirPods / casque (system_profiler)

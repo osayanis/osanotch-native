@@ -23,6 +23,9 @@ class AITracker: ObservableObject {
         }
     }
     
+    private var noGenTicks = 0
+    private var currentTask: String? = nil
+
     private func checkActiveAIs() {
         guard AXIsProcessTrusted() else { return }
         
@@ -36,6 +39,7 @@ class AITracker: ObservableObject {
         ]
         
         var newlyGeneratingAI: String? = nil
+        var newlyFoundTask: String? = nil
         
         for app in NSWorkspace.shared.runningApplications {
             let bundleId = app.bundleIdentifier ?? ""
@@ -79,23 +83,41 @@ class AITracker: ObservableObject {
                 }
             }
             
-            if let ai = detectingAI, scanForGenerating(window) {
+            if let ai = detectingAI, let task = scanForGenerating(window) {
                 newlyGeneratingAI = ai
+                newlyFoundTask = task
                 break // We found one generating, no need to check others
             }
         }
 
         DispatchQueue.main.async {
-            self.currentAI = newlyGeneratingAI ?? self.currentAI
             let isGen = newlyGeneratingAI != nil
-            self.isGenerating = isGen
             
-            if self.wasGenerating && !isGen, let finishedAI = self.currentAI {
-                // L'IA vient de finir !
-                self.onFinish?("\(finishedAI) a fini de générer.")
-                self.currentAI = nil
+            if isGen {
+                self.noGenTicks = 0
+                self.currentAI = newlyGeneratingAI
+                self.isGenerating = true
+                self.wasGenerating = true
+                
+                // Si la tâche a changé et qu'elle est pertinente
+                if let task = newlyFoundTask, task != self.currentTask {
+                    self.currentTask = task
+                    let cleanName = newlyGeneratingAI ?? "L'IA"
+                    self.onFinish?("\(cleanName) : \(task)")
+                }
+            } else {
+                self.noGenTicks += 1
+                // Il faut 3 ticks (3x2s = 6s) sans génération pour valider la fin
+                if self.wasGenerating && self.noGenTicks >= 3 {
+                    if let finishedAI = self.currentAI {
+                        self.onFinish?("\(finishedAI) a fini de générer.")
+                    }
+                    self.currentAI = nil
+                    self.currentTask = nil
+                    self.isGenerating = false
+                    self.wasGenerating = false
+                }
             }
-            self.wasGenerating = isGen
             self.isChecking = false
         }
     }
@@ -105,27 +127,36 @@ class AITracker: ObservableObject {
         "stop generating", "stop response", "stop streaming", "génération en cours",
         "generating", "thinking", "esc to interrupt", "interrupt", "cancel generation",
         "arrêter la génération", "répond", "is working", "running…", "en cours d'exécution",
-        "claude is thinking", "agent is thinking", "running task", "[thought]", "tool call"
+        "claude is thinking", "agent is thinking", "running task", "[thought]", "tool call",
+        "tool is running", "task id"
     ]
 
-    private func scanForGenerating(_ axWindow: AXUIElement) -> Bool {
-        var isGen = false
+    private func scanForGenerating(_ axWindow: AXUIElement) -> String? {
+        var foundTask: String? = nil
         scanAXTree(element: axWindow, depth: 0, maxDepth: 22) { role, title, desc, val in
             var textParts: [String] = []
             if let t = title, !t.isEmpty { textParts.append(t) }
             if let d = desc, !d.isEmpty { textParts.append(d) }
             if let v = val, !v.isEmpty {
-                // Seulement la fin du texte pour éviter de scanner tout l'historique d'un terminal
                 let suffix = String(v.suffix(1000))
                 textParts.append(suffix)
             }
-            let text = textParts.joined(separator: " ").lowercased()
+            let text = textParts.joined(separator: "\n")
             if text.isEmpty { return false }
             
-            if Self.genKeywords.contains(where: { text.contains($0) }) { isGen = true; return true }
+            let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            for line in lines.reversed() {
+                let lowerLine = line.lowercased()
+                if Self.genKeywords.contains(where: { lowerLine.contains($0) }) {
+                    var clean = line
+                    if clean.count > 40 { clean = String(clean.prefix(37)) + "..." }
+                    foundTask = clean
+                    return true // stop scanning
+                }
+            }
             return false
         }
-        return isGen
+        return foundTask
     }
 
     private func scanAXTree(element: AXUIElement, depth: Int = 0, maxDepth: Int = 22, block: (String, String?, String?, String?) -> Bool) {

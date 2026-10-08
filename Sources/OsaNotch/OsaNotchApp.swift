@@ -34,6 +34,11 @@ final class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+// Accepte le 1er clic : les boutons réagissent immédiatement même si le panneau n'est pas actif.
+final class KeyHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     var panel: IslandPanel!
@@ -63,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isMovable = false
         panel.ignoresMouseEvents = true
 
-        let host = NSHostingView(rootView: IslandView(model: model, data: model.data))
+        let host = KeyHostingView(rootView: IslandView(model: model, data: model.data))
         host.frame = NSRect(x: 0, y: 0, width: Island.winW, height: Island.winH)
         host.autoresizingMask = [.width, .height]
         panel.contentView = host

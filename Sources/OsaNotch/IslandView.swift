@@ -77,6 +77,7 @@ struct IslandView: View {
         case .notification: NotificationView(model: model, accent: data.accent).frame(width: 340, height: size.height)
         case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.dropBridge).frame(width: 480, height: size.height)
         case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 520, height: size.height)
+        case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 500, height: size.height)
         case .onboarding:   OnboardingView(model: model, accent: data.accent).frame(width: 480, height: size.height)
         }
     }
@@ -170,6 +171,7 @@ struct IslandView: View {
             artwork(92, 13)
                 .shadow(color: data.accent.opacity(0.5), radius: 11, y: 4)
             VStack(alignment: .leading, spacing: 0) {
+                Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(data.music?.title ?? "")
                         .font(.system(size: 13.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
@@ -177,9 +179,9 @@ struct IslandView: View {
                         .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).lineLimit(1)
                 }
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 5)
                 lyricsBlock
-                Spacer(minLength: 4)
+                Spacer(minLength: 5)
 
                 HStack(spacing: 12) {
                     TimelineView(.periodic(from: .now, by: 0.5)) { ctx in

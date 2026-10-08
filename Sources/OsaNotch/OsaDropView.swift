@@ -79,9 +79,12 @@ struct OsaDropView: View {
                                     code = ""
                                     bridge.reset()
                                 } label: {
-                                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(.red)
-                                        .background(Circle().fill(.white))
-                                }.buttonStyle(.plain).offset(x: 8, y: -8)
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.9))
+                                        .frame(width: 16, height: 16)
+                                        .background(Circle().fill(Color.black.opacity(0.55)))
+                                }.buttonStyle(.plain).offset(x: 7, y: -7)
                             }
                             Spacer()
                         }

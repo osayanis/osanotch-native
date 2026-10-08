@@ -5,7 +5,7 @@ import SkyLightWindow
 import AVFoundation
 import EventKit
 
-enum AppView { case home, notes, drop, cast, dashboard, choice, notification, onboarding }
+enum AppView { case home, notes, drop, cast, party, dashboard, choice, notification, onboarding }
 
 final class AppModel: ObservableObject {
     @Published var cursor: CGPoint = .zero
@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
     let dropBridge = DropBridge()
     let castBridge = CastBridge()
+    lazy var partyBridge = PartyBridge(data: data)
 
     init() {
         let ax = AXIsProcessTrusted()
@@ -60,7 +61,8 @@ enum Island {
         case .notes:        return CGSize(width: 440, height: 320)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
-        case .dashboard:    return CGSize(width: 480, height: 240)
+        case .party:        return CGSize(width: 500, height: vh)
+        case .dashboard:    return CGSize(width: 480, height: 320)
         case .choice:       return CGSize(width: 380, height: 160)
         case .notification: return CGSize(width: 320, height: 80)
         case .onboarding:   return CGSize(width: 480, height: 480)
@@ -177,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Donner le focus clavier UNE SEULE FOIS à l'ouverture d'une vue à saisie.
         model.$view.removeDuplicates().sink { [weak self] v in
             guard let self else { return }
-            if v == .drop || v == .cast || v == .notes {
+            if v == .drop || v == .cast || v == .party || v == .notes {
                 self.panel.makeKeyAndOrderFront(nil)
             }
         }.store(in: &cancellables)

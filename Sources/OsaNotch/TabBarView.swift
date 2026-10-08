@@ -13,6 +13,8 @@ struct TabBarView: View {
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
             Spacer()
+            tbButton("play.rectangle.fill", .cast)
+            tbButton("music.note", .party)
             if dropHover { Text("Lâcher pour AirDrop").font(.system(size: 10, weight: .semibold)).foregroundColor(accent) }
             
             if let b = battery {

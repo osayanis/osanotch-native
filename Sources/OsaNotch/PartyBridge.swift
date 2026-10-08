@@ -41,7 +41,8 @@ final class PartyBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKN
 
     private func load() { ready = false; webView.load(URLRequest(url: URL(string: "https://osaparty.osalabs.fr/osanotch-party-bridge.html")!)) }
 
-    static func gen() -> String { String((0..<4).map { _ in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()! }) }
+    // Même format que osaparty web : code numérique à 6 chiffres.
+    static func gen() -> String { String(Int.random(in: 100000...999999)) }
 
     func host() {
         let c = Self.gen()

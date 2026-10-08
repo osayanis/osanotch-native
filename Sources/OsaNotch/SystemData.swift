@@ -152,7 +152,11 @@ final class SystemData: ObservableObject {
 
     // MARK: Paroles synchronisées (LRCLIB, gratuit, sans clé)
     private func fetchLyrics(artist: String, title: String, duration: Double) {
-        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "" }
+        func enc(_ s: String) -> String {
+            var allowed = CharacterSet.urlQueryAllowed
+            allowed.remove(charactersIn: "&+=")
+            return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        }
         // /get exige une durée proche ; on retombe sur /search sinon.
         let getURL = "https://lrclib.net/api/get?artist_name=\(enc(artist))&track_name=\(enc(title))&duration=\(Int(duration.rounded()))"
         let searchURL = "https://lrclib.net/api/search?track_name=\(enc(title))&artist_name=\(enc(artist))"

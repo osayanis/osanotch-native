@@ -79,7 +79,7 @@ enum Island {
         switch view {
         case .home:         return playing ? CGSize(width: 560, height: 168) : CGSize(width: 480, height: 185)
         case .notes:        return CGSize(width: 440, height: 320)
-        case .drop:         return CGSize(width: 480, height: vh)
+        case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 320)

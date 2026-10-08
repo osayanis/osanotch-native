@@ -103,10 +103,23 @@ struct OsaDropView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: 140)
         .onDrag {
-            if let url = model.droppedURL {
-                return NSItemProvider(object: url as NSURL)
+            guard let url = model.droppedURL else { return NSItemProvider() }
+            // On fournit une VRAIE représentation de fichier : le gestionnaire ci-dessous
+            // n'est appelé que lorsqu'une destination accepte le dépôt → on vide alors la
+            // pastille (si le glisser est annulé, rien n'est appelé, le fichier reste).
+            let provider = NSItemProvider()
+            let typeID = UTType(filenameExtension: url.pathExtension)?.identifier ?? UTType.data.identifier
+            provider.suggestedName = url.lastPathComponent
+            provider.registerFileRepresentation(forTypeIdentifier: typeID, fileOptions: [], visibility: .all) { completion in
+                completion(url, false, nil)
+                DispatchQueue.main.async {
+                    model.droppedURL = nil
+                    code = ""
+                    bridge.reset()
+                }
+                return nil
             }
-            return NSItemProvider()
+            return provider
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $dropActive) { providers in
             providers.first?.loadObject(ofClass: URL.self) { url, _ in

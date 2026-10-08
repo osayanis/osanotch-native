@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-// Interface OsaCast 100% native, pensée pour le notch.
 struct OsaCastView: View {
+    @ObservedObject var model: AppModel
     var accent: Color
     var back: () -> Void
 
@@ -10,6 +10,8 @@ struct OsaCastView: View {
     @State private var mode: Mode = .choose
     @State private var code: String = ""
     @State private var entry: String = ""
+
+    var mascotMood: Mood { mode == .hosting ? .happy : .idle }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,64 +26,67 @@ struct OsaCastView: View {
     }
 
     var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
             Button { if mode == .choose { back() } else { mode = .choose } } label: {
-                Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).foregroundColor(.white.opacity(0.75))
-                    .padding(7).contentShape(Rectangle())
+                Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.white.opacity(0.8))
+                    .padding(8).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            Image(systemName: "play.rectangle.fill").font(.system(size: 12)).foregroundColor(accent)
-            Text("OsaCast").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+            OsaCharacter(model: model, mood: mascotMood, accent: accent, size: 28)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("OsaCast").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                Text("Partage d'écran").font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
+            }
             Spacer()
-        }.padding(.horizontal, 16).padding(.top, 11).padding(.bottom, 6)
+        }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
     }
 
     var chooseView: some View {
         VStack(spacing: 10) {
-            Text("Partage ton écran en direct").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.4))
-            bigButton("Créer une room", "plus.circle.fill") { code = Self.gen(); mode = .hosting }
-            bigButton("Rejoindre une room", "arrow.right.circle.fill") { mode = .joining }
-        }.padding(.horizontal, 22).padding(.top, 10)
+            bigButton("Créer une room", "plus", "Partage ton écran en direct") { code = Self.gen(); mode = .hosting }
+            bigButton("Rejoindre une room", "arrow.right", "Regarde l'écran de quelqu'un") { mode = .joining }
+        }.padding(.horizontal, 20).padding(.top, 4)
     }
 
     var hostingView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 16).fill(.black)
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
-                VStack(spacing: 8) {
-                    HStack(spacing: 6) { Circle().fill(.red).frame(width: 8, height: 8); Text("EN DIRECT").font(.system(size: 10, weight: .bold)).foregroundColor(.red).tracking(1) }
-                    Text(code).font(.system(size: 30, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(5)
+                RoundedRectangle(cornerRadius: 18).fill(.black).overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.red.opacity(0.55), lineWidth: 1.5))
+                VStack(spacing: 10) {
+                    HStack(spacing: 6) { Circle().fill(.red).frame(width: 8, height: 8); Text("EN DIRECT").font(.system(size: 10, weight: .bold)).foregroundColor(.red).tracking(1.5) }
+                    Text(code).font(.system(size: 32, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(6)
                     Text("Ton écran est partagé").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5))
                 }
             }.frame(height: 150)
-            Text("Donne ce code à qui veut regarder").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.35))
-        }.padding(.horizontal, 22).padding(.top, 6)
+        }.padding(.horizontal, 22).padding(.top, 2)
     }
 
     var joiningView: some View {
         VStack(spacing: 14) {
             Text("Entre le code de la room").font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
             TextField("", text: $entry)
-                .textFieldStyle(.plain).font(.system(size: 26, weight: .bold, design: .monospaced))
-                .multilineTextAlignment(.center).foregroundColor(.white).tracking(4)
-                .frame(height: 54).background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.06)))
+                .textFieldStyle(.plain).font(.system(size: 28, weight: .bold, design: .monospaced))
+                .multilineTextAlignment(.center).foregroundColor(.white).tracking(6)
+                .frame(height: 56).background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
                 .onChange(of: entry) { _, v in entry = String(v.uppercased().prefix(6)) }
             Button { } label: {
-                Text(entry.count == 6 ? "Regarder" : "6 lettres").font(.system(size: 13, weight: .semibold))
+                Text(entry.count == 6 ? "Regarder" : "Code à 6 lettres").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(entry.count == 6 ? .black : .white.opacity(0.4)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(entry.count == 6 ? Color.white : .white.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: 13).fill(entry.count == 6 ? accent : .white.opacity(0.08)))
             }.buttonStyle(.plain).disabled(entry.count != 6)
-        }.padding(.horizontal, 30).padding(.top, 10)
+        }.padding(.horizontal, 26).padding(.top, 2)
     }
 
-    func bigButton(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
+    func bigButton(_ title: String, _ icon: String, _ sub: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 18)).foregroundColor(accent)
-                Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                Spacer(); Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
-            }.padding(.horizontal, 16).padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
+            HStack(spacing: 13) {
+                ZStack { Circle().fill(accent).frame(width: 36, height: 36); Image(systemName: icon).font(.system(size: 15, weight: .bold)).foregroundColor(.white) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                    Text(sub).font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+                }
+                Spacer(); Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.3))
+            }.padding(.horizontal, 14).padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 15).fill(.white.opacity(0.055)))
         }.buttonStyle(.plain)
     }
 

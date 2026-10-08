@@ -20,11 +20,12 @@ enum Island {
     static let winH: CGFloat = 460
     static func shapeSize(expanded: Bool, view: AppView, playing: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
         if !expanded { return CGSize(width: playing ? notchW + 120 : notchW, height: notchH) }
+        _ = sw
         switch view {
-        case .home:  return CGSize(width: 480, height: 210)           // home compact (inchangé)
-        case .notes: return CGSize(width: sw, height: 300)            // vues de fonction : pleine largeur → couvrent les icônes du menu
-        case .drop:  return CGSize(width: sw, height: vh)
-        case .cast:  return CGSize(width: sw, height: vh)
+        case .home:  return CGSize(width: 480, height: 210)
+        case .notes: return CGSize(width: 440, height: 300)
+        case .drop:  return CGSize(width: 460, height: vh)
+        case .cast:  return CGSize(width: 520, height: vh)
         }
     }
     static func homeRect(_ sf: CGRect) -> CGRect { CGRect(x: sf.midX - 240, y: sf.maxY - 210, width: 480, height: 210) }

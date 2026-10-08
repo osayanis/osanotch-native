@@ -14,23 +14,16 @@ struct DashboardView: View {
             HStack(spacing: 16) {
                 // Colonne de gauche (Caméra)
                 CameraMirrorView(accent: accent)
-                    .frame(width: 160, height: 190)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.1), lineWidth: 1))
+                    .frame(width: 168, height: 196)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.1), lineWidth: 1))
 
                 // Colonne de droite (Calendrier + Musique)
                 VStack(spacing: 12) {
                     calendarCard
                     musicCard
                 }
-            }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 14)
-
-            // Raccourcis services
-            HStack(spacing: 12) {
-                serviceButton("OsaDrop", "paperplane.fill", model.data.services.drop) { model.view = .drop }
-                serviceButton("OsaCast", "play.rectangle.fill", model.data.services.cast) { model.view = .cast }
-                serviceButton("OsaParty", "music.note.list", model.data.services.party) { model.view = .party }
-            }.padding(.horizontal, 20).padding(.bottom, 18)
+            }.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 18)
 
             Spacer(minLength: 0)
         }
@@ -149,18 +142,6 @@ struct DashboardView: View {
         return m.duration > 0 ? min(p, m.duration) : p
     }
 
-    func serviceButton(_ label: String, _ icon: String, _ online: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: icon).font(.system(size: 13)).foregroundColor(accent)
-                Text(label).font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
-                Circle().fill(online ? .green : Color.white.opacity(0.2)).frame(width: 5, height: 5)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 11)
-            .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.06)))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.06), lineWidth: 1))
-        }.buttonStyle(.plain)
-    }
 
     var header: some View {
         TabBarView(model: model, accent: accent, dropHover: false, battery: model.data.battery, lowBat: (model.data.battery?.percent ?? 100) < 20)

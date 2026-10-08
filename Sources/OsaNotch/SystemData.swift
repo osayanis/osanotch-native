@@ -18,7 +18,7 @@ final class SystemData: ObservableObject {
     @Published var music: MusicInfo?
     @Published var airpods: AirpodsInfo?
     @Published var event: EventInfo?
-    @Published var eventDays: Set<Date> = []   // jours (début de journée) ayant un évènement
+    @Published var events: [EventInfo] = []    // évènements de la fenêtre (−3 j … +14 j)
     @Published var services = ServicesInfo()
     @Published var artwork: NSImage?
     @Published var accent: Color = Color(red: 0.42, green: 0.55, blue: 1.0)
@@ -76,14 +76,40 @@ final class SystemData: ObservableObject {
             guard p.count >= 6 else { return }
             // AppleScript sort les décimales avec la virgule en locale FR → remplacer avant parsing.
             func num(_ s: String) -> Double { Double(s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")) ?? 0 }
+            
+            let artRaw = p.count > 6 ? p[6] : ""
             var info = MusicInfo(playing: p[0] == "playing", title: p[1], artist: p[2], source: p[3],
-                                 artworkURL: nil, position: num(p[4]), duration: num(p[5]))
+                                 artworkURL: artRaw, position: num(p[4]), duration: num(p[5]))
             let key = "\(info.artist)|\(info.title)"
             DispatchQueue.main.async { self.music = info; self.positionSampledAt = Date() }
             if key != self.lastArtKey {
                 self.lastArtKey = key
                 DispatchQueue.main.async { self.lyrics = []; self.artwork = nil }
-                self.fetchArtwork(artist: info.artist, title: info.title)
+                
+                if artRaw.hasPrefix("local:") {
+                    let path = artRaw.replacingOccurrences(of: "local:", with: "")
+                    if let img = NSImage(contentsOf: URL(fileURLWithPath: path)) {
+                        let col = Self.vibrantColor(img)
+                        DispatchQueue.main.async {
+                            guard self.lastArtKey == key else { return }
+                            self.artwork = img; if let col { self.accent = col }
+                        }
+                    }
+                } else if artRaw.hasPrefix("http") {
+                    if let iurl = URL(string: artRaw) {
+                        URLSession.shared.dataTask(with: iurl) { data, _, _ in
+                            guard self.lastArtKey == key, let data, let img = NSImage(data: data) else { return }
+                            let col = Self.vibrantColor(img)
+                            DispatchQueue.main.async {
+                                guard self.lastArtKey == key else { return }
+                                self.artwork = img; if let col { self.accent = col }
+                            }
+                        }.resume()
+                    }
+                } else {
+                    self.fetchArtwork(artist: info.artist, title: info.title)
+                }
+                
                 self.fetchLyrics(artist: info.artist, title: info.title, duration: info.duration)
             }
             _ = info
@@ -208,12 +234,10 @@ final class SystemData: ObservableObject {
             guard !cals.isEmpty else { return }
             let pred = self.store.predicateForEvents(withStart: weekStart, end: end, calendars: cals)
             let evs = self.store.events(matching: pred).sorted { $0.startDate < $1.startDate }
-            // Jours avec évènement (pour les points sous les dates).
-            let days = Set(evs.map { cal.startOfDay(for: $0.startDate) })
+            let all = evs.map { EventInfo(title: $0.title ?? "Évènement", start: $0.startDate, end: $0.endDate) }
             // Prochain évènement (à venir).
-            let next = evs.first { $0.endDate >= now }
-            let info = next.map { EventInfo(title: $0.title ?? "Évènement", start: $0.startDate, end: $0.endDate) }
-            DispatchQueue.main.async { self.event = info; self.eventDays = days }
+            let next = all.first { $0.end >= now }
+            DispatchQueue.main.async { self.event = next; self.events = all }
         }
     }
 
@@ -268,11 +292,22 @@ final class SystemData: ObservableObject {
                   if player state is not stopped then
                     set pos to 0
                     set dur to 0
+                    set artFlag to ""
                     try
                       set pos to player position
                       set dur to duration of current track
                     end try
-                    set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Music||" & pos & "||" & dur
+                    try
+                      if exists (artwork 1 of current track) then
+                        set artData to raw data of artwork 1 of current track
+                        set f to open for access (POSIX file "/tmp/osa_art.jpg") with write permission
+                        set eof of f to 0
+                        write artData to f
+                        close access f
+                        set artFlag to "local:/tmp/osa_art.jpg"
+                      end if
+                    end try
+                    set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Music||" & pos & "||" & dur & "||" & artFlag
                   end if
                 end try
               end tell
@@ -286,11 +321,15 @@ final class SystemData: ObservableObject {
                 try
                   set pos to 0
                   set dur to 0
+                  set artUrl to ""
                   try
                     set pos to player position
                     set dur to (duration of current track) / 1000
                   end try
-                  set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Spotify||" & pos & "||" & dur
+                  try
+                    set artUrl to artwork url of current track
+                  end try
+                  set out to (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||Spotify||" & pos & "||" & dur & "||" & artUrl
                 end try
               end tell
             end if

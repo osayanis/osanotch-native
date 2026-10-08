@@ -12,7 +12,6 @@ struct TabBarView: View {
             tbButton("house.fill", .home)
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
-            tbButton("note.text", .notes)
             Spacer()
             if dropHover { Text("Lâcher pour AirDrop").font(.system(size: 10, weight: .semibold)).foregroundColor(accent) }
             
@@ -20,7 +19,7 @@ struct TabBarView: View {
                 HStack(spacing: 5) {
                     BatteryGlyph(percent: b.percent, charging: b.charging)
                     Text("\(b.percent)%").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                        .foregroundColor(b.charging ? .green : (lowBat ? .red : .white.opacity(0.6)))
+                        .foregroundColor(lowBat ? .red : .white)
                 }
             }
             
@@ -42,10 +41,8 @@ struct BatteryGlyph: View {
 
     private var frac: CGFloat { max(0, min(1, CGFloat(percent) / 100)) }
     private var color: Color {
-        if charging { return .green }
-        if percent <= 15 { return .red }
-        if percent <= 40 { return .orange }
-        return .green
+        if percent <= 15 && !charging { return .red }
+        return .white
     }
 
     var body: some View {

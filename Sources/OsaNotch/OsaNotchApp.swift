@@ -5,7 +5,7 @@ import SkyLightWindow
 import AVFoundation
 import EventKit
 
-enum AppView { case home, notes, drop, cast, party, dashboard, choice, notification, onboarding }
+enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding }
 
 struct OsaNotif: Identifiable, Equatable {
     let id = UUID()
@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     private var bannerTimer: Timer?
     
     let aiTracker = AITracker()
+    let clipboard = ClipboardManager()
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
     let dropBridge = DropBridge()
     let castBridge = CastBridge()
@@ -48,6 +49,7 @@ final class AppModel: ObservableObject {
         }
         aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
+        clipboard.start()
     }
 
     // Fait apparaître une notification en bannière (sans survol), puis la stocke.
@@ -78,7 +80,6 @@ enum Island {
         _ = sw
         switch view {
         case .home:         return playing ? CGSize(width: 560, height: 168) : CGSize(width: 480, height: 185)
-        case .notes:        return CGSize(width: 440, height: 320)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)
@@ -205,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Donner le focus clavier UNE SEULE FOIS à l'ouverture d'une vue à saisie.
         model.$view.removeDuplicates().sink { [weak self] v in
             guard let self else { return }
-            if v == .drop || v == .cast || v == .party || v == .notes {
+            if v == .drop || v == .cast || v == .party {
                 self.panel.makeKeyAndOrderFront(nil)
             }
         }.store(in: &cancellables)

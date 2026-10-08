@@ -9,7 +9,7 @@ struct MusicInfo: Equatable {
 }
 struct BatteryInfo: Equatable { var percent: Int; var charging: Bool }
 struct AirpodsInfo: Equatable { var name: String; var left: Int?; var right: Int?; var caseLvl: Int?; var single: Int? }
-struct EventInfo: Equatable { var title: String; var when: String }
+struct EventInfo: Equatable { var title: String; var start: Date; var end: Date }
 struct ServicesInfo: Equatable { var party = false; var drop = false; var cast = false }
 struct LyricLine: Equatable { var t: Double; var text: String }
 
@@ -18,6 +18,7 @@ final class SystemData: ObservableObject {
     @Published var music: MusicInfo?
     @Published var airpods: AirpodsInfo?
     @Published var event: EventInfo?
+    @Published var eventDays: Set<Date> = []   // jours (début de journée) ayant un évènement
     @Published var services = ServicesInfo()
     @Published var artwork: NSImage?
     @Published var accent: Color = Color(red: 0.42, green: 0.55, blue: 1.0)
@@ -199,16 +200,20 @@ final class SystemData: ObservableObject {
         if calBusy { return }; calBusy = true
         q.async {
             defer { self.calBusy = false }
-            let now = Date(); let end = now.addingTimeInterval(14 * 86400)
+            let cal = Calendar.current
+            let now = Date()
+            let weekStart = cal.startOfDay(for: now.addingTimeInterval(-3 * 86400))
+            let end = now.addingTimeInterval(14 * 86400)
             let cals = self.store.calendars(for: .event)
             guard !cals.isEmpty else { return }
-            let pred = self.store.predicateForEvents(withStart: now, end: end, calendars: cals)
+            let pred = self.store.predicateForEvents(withStart: weekStart, end: end, calendars: cals)
             let evs = self.store.events(matching: pred).sorted { $0.startDate < $1.startDate }
-            guard let e = evs.first else { DispatchQueue.main.async { self.event = nil }; return }
-            let fmt = DateFormatter(); fmt.locale = Locale(identifier: "fr_FR")
-            fmt.dateFormat = "EEE d MMM · HH:mm"
-            let info = EventInfo(title: e.title ?? "Évènement", when: fmt.string(from: e.startDate))
-            DispatchQueue.main.async { self.event = info }
+            // Jours avec évènement (pour les points sous les dates).
+            let days = Set(evs.map { cal.startOfDay(for: $0.startDate) })
+            // Prochain évènement (à venir).
+            let next = evs.first { $0.endDate >= now }
+            let info = next.map { EventInfo(title: $0.title ?? "Évènement", start: $0.startDate, end: $0.endDate) }
+            DispatchQueue.main.async { self.event = info; self.eventDays = days }
         }
     }
 

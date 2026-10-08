@@ -82,7 +82,7 @@ enum Island {
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)
-        case .dashboard:    return CGSize(width: 480, height: 320)
+        case .dashboard:    return CGSize(width: 480, height: 344)
         case .choice:       return CGSize(width: 380, height: 160)
         case .notification: return CGSize(width: 470, height: 176)
         case .onboarding:   return CGSize(width: 480, height: 480)

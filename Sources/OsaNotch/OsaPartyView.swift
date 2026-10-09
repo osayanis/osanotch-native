@@ -7,12 +7,12 @@ struct OsaPartyView: View {
     var back: () -> Void
     @ObservedObject var bridge: PartyBridge
 
-    enum Mode { case choose, hosting, joining }
-    @State private var mode: Mode = .choose
     @State private var entry: String = ""
 
     var connected: Bool { bridge.phase == .connected }
-    var inRoom: Bool { mode == .hosting || (mode == .joining && connected) }
+    // Lu depuis le pont (possédé par AppModel) et non un @State : la vue est recréée
+    // à chaque dépli du notch, le salon, lui, reste connecté.
+    var inRoom: Bool { !bridge.code.isEmpty && (bridge.mode == "host" || connected) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,10 +30,9 @@ struct OsaPartyView: View {
             Spacer(minLength: 0)
         }
         .onAppear { applyHeight() }
-        .onChange(of: mode) { _, _ in applyHeight() }
+        .onChange(of: inRoom) { _, _ in applyHeight() }
         .onChange(of: bridge.phase) { _, _ in applyHeight() }
         .onChange(of: bridge.members) { _, _ in applyHeight() }
-        .background(HiddenWeb(webView: bridge.webView).frame(width: 1, height: 1).opacity(0.02))
     }
 
     func applyHeight() {
@@ -42,7 +41,7 @@ struct OsaPartyView: View {
 
     // ── Boîte Créer (comme OsaCast / OsaDrop) ──
     var creerBox: some View {
-        Button { bridge.host(); mode = .hosting } label: {
+        Button { bridge.host() } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
@@ -84,7 +83,7 @@ struct OsaPartyView: View {
                         .foregroundColor(.white)
                         .onChange(of: entry) { _, new in
                             entry = String(new.filter { $0.isNumber }.prefix(6))
-                            if entry.count == 6 { mode = .joining; bridge.join(entry) }
+                            if entry.count == 6 { bridge.join(entry) }
                         }
                     Text(bridge.phase == .error ? "Salon introuvable" : "Code à 6 chiffres")
                         .font(.system(size: 10)).foregroundColor(bridge.phase == .error ? .red : .white.opacity(0.5))
@@ -97,31 +96,103 @@ struct OsaPartyView: View {
     // ── Dans le salon ──
     var roomView: some View {
         VStack(spacing: 10) {
-            VStack(spacing: 9) {
-                HStack(spacing: 6) {
-                    Circle().fill(connected || bridge.mode == "host" ? .green : .white.opacity(0.4)).frame(width: 7, height: 7)
-                    Text(bridge.mode == "host" ? "TON SALON" : "SALON REJOINT").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
-                    Spacer()
-                    Text("\(bridge.members) à l'écoute").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
-                }
-                Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 32, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(5)
-                if let m = model.data.music, m.playing {
-                    Text("♪ \(m.title) — \(m.artist)").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
-                } else {
-                    Text("Lance un morceau sur Apple Music").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.45))
-                }
+            // Bandeau du haut avec le code
+            HStack(spacing: 6) {
+                Circle().fill(connected || bridge.mode == "host" ? .green : .white.opacity(0.4)).frame(width: 7, height: 7)
+                Text(bridge.mode == "host" ? "TON SALON" : "SALON REJOINT").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
+                Spacer()
+                Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 18, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(3)
+                Spacer()
+                Image(systemName: "headphones").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+                Text("\(bridge.members)").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 16).padding(.horizontal, 16)
-            .background(RoundedRectangle(cornerRadius: 16).fill(.white.opacity(0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, 4)
+
+            // Mini-lecteur façon Dashboard
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06))
+                
+                if let art = model.data.artwork {
+                    Image(nsImage: art)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 86)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .blur(radius: 20)
+                        .opacity(0.4)
+                }
+                
+                VStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        if let art = model.data.artwork {
+                            Image(nsImage: art).resizable().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 8))
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        } else {
+                            RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)).frame(width: 44, height: 44)
+                                .overlay(Image(systemName: "music.note").foregroundColor(.white.opacity(0.3)))
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            let title = bridge.mode == "guest" ? (bridge.remoteMusic?.title ?? "En attente du host...") : (model.data.music?.title ?? "Aucune lecture")
+                            let artist = bridge.mode == "guest" ? (bridge.remoteMusic?.artist ?? "OsaParty") : (model.data.music?.artist ?? "Apple Music / Spotify")
+                            Text(title).font(.system(size: 13, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                            Text(artist).font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+                        }
+                        Spacer()
+                        
+                        // Contrôles
+                        HStack(spacing: 8) {
+                            Button { SystemData.controlMusic("previous track") } label: {
+                                Image(systemName: "backward.fill").font(.system(size: 12)).foregroundColor(.white.opacity(0.8))
+                            }.buttonStyle(.plain)
+                            
+                            let playing = bridge.mode == "guest" ? (bridge.remoteMusic?.playing == true) : (model.data.music?.playing == true)
+                            Button { SystemData.controlMusic("playpause") } label: {
+                                ZStack {
+                                    Circle().fill(.white).frame(width: 32, height: 32)
+                                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 13, weight: .black))
+                                        .foregroundColor(.black)
+                                        .offset(x: playing ? 0 : 1.5)
+                                }
+                            }.buttonStyle(.plain)
+                            
+                            Button { SystemData.controlMusic("next track") } label: {
+                                Image(systemName: "forward.fill").font(.system(size: 12)).foregroundColor(.white.opacity(0.8))
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    
+                    // Barre de progression
+                    TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
+                        let dur = model.data.music?.duration ?? 0
+                        let pos = livePos(ctx.date)
+                        let prog = dur > 0 ? min(1, pos / dur) : 0
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(.white.opacity(0.15)).frame(height: 4)
+                                Capsule().fill(accent).frame(width: g.size.width * prog, height: 4)
+                            }
+                        }.frame(height: 4)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+            }
+            .frame(height: 86)
 
             HStack {
-                Text("osaparty.osalabs.fr · partage le code").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.35))
+                Text("osaparty.osalabs.fr · rejoins sur le web").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.35))
                 Spacer()
-                Button { bridge.leave(); mode = .choose; entry = "" } label: {
-                    Text("Quitter").font(.system(size: 11, weight: .semibold)).foregroundColor(.red)
+                Button { bridge.leave(); entry = "" } label: {
+                    Text("Quitter le salon").font(.system(size: 10, weight: .bold)).foregroundColor(.red.opacity(0.8))
                 }.buttonStyle(.plain)
             }
         }.padding(.horizontal, 20).padding(.top, 2)
+    }
+
+    func livePos(_ now: Date) -> Double {
+        guard let m = model.data.music else { return 0 }
+        var p = m.position
+        if m.playing { p += now.timeIntervalSince(model.data.positionSampledAt) }
+        return m.duration > 0 ? min(p, m.duration) : p
     }
 }

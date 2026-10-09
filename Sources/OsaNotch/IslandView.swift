@@ -56,6 +56,7 @@ struct IslandView: View {
                 else if model.view == .notification && model.showNotifBanner { notifBanner.transition(.opacity) }
                 else { collapsedView.transition(.opacity) }
                 castLayer   // moteur OsaCast persistant : reste monté même notch replié
+                bridgesLayer // ponts OsaDrop / OsaParty : idem, invisibles
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
             .opacity(!exp && !hudActive && !playing && !model.showNotifBanner && !model.dropHover ? 0 : 1)
@@ -114,6 +115,20 @@ struct IslandView: View {
             .clipShape(IslandShape(bottom: model.expanded ? 28 : 12))
             .opacity(castShowsVideo ? 1 : 0.001)
         }
+    }
+
+    // Les WKWebView des ponts doivent rester attachés à la fenêtre quand le notch se replie
+    // (sinon WebKit peut les suspendre) : un seul point de montage, permanent, 1×1 invisible.
+    var bridgesLayer: some View {
+        ZStack {
+            HiddenWeb(webView: model.dropBridge.webView).frame(width: 1, height: 1)
+            if let party = model.partyBridgeIfCreated {
+                HiddenWeb(webView: party.webView).frame(width: 1, height: 1)
+            }
+        }
+        .frame(width: 1, height: 1)
+        .opacity(0.001)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder var content: some View {

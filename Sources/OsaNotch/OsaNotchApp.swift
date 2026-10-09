@@ -50,7 +50,12 @@ final class AppModel: ObservableObject {
     let dropBridge = DropBridge()
     let castBridge = CastBridge()
     let friendBridge = FriendBridge.shared
-    lazy var partyBridge = PartyBridge(data: data)
+    private var _partyBridge: PartyBridge?
+    var partyBridgeIfCreated: PartyBridge? { _partyBridge }
+    var partyBridge: PartyBridge {
+        if let p = _partyBridge { return p }
+        let p = PartyBridge(data: data); _partyBridge = p; return p
+    }
 
     init() {
         let ax = AXIsProcessTrusted()

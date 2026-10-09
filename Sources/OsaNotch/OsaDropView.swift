@@ -33,7 +33,6 @@ struct OsaDropView: View {
             }
             Spacer(minLength: 0)
         }
-        .background(HiddenWeb(webView: bridge.webView).frame(width: 1, height: 1).opacity(0.02))
         .onAppear { shelf.prune() }
         .onChange(of: shelf.items) { _, _ in syncSend() }
         .onChange(of: shelf.selected) { _, _ in syncSend() }

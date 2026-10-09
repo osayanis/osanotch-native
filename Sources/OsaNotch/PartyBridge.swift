@@ -12,6 +12,9 @@ final class PartyBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     @Published var code: String = ""
     @Published var members: Int = 0
     @Published var mode: String = ""   // "host" | "guest"
+    
+    struct RemoteMusic: Equatable { var title: String; var artist: String; var playing: Bool }
+    @Published var remoteMusic: RemoteMusic?
 
     let webView: WKWebView
     private var ready = false
@@ -39,7 +42,11 @@ final class PartyBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             .store(in: &cancellables)
     }
 
-    private func load() { ready = false; webView.load(URLRequest(url: URL(string: "https://osaparty.osalabs.fr/osanotch-party-bridge.html")!)) }
+    // La page-pont relaie elle-même l'état du salon (message "remote-state").
+    private func load() {
+        ready = false
+        webView.load(URLRequest(url: URL(string: "https://osaparty.osalabs.fr/osanotch-party-bridge.html")!))
+    }
 
     // Même format que osaparty web : code numérique à 6 chiffres.
     static func gen() -> String { String(Int.random(in: 100000...999999)) }
@@ -55,13 +62,16 @@ final class PartyBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     }
     func leave() {
         webView.evaluateJavaScript("osaParty.leave()", completionHandler: nil)
-        DispatchQueue.main.async { self.code = ""; self.members = 0; self.mode = ""; self.phase = .idle }
+        DispatchQueue.main.async { self.code = ""; self.members = 0; self.mode = ""; self.phase = .idle; self.remoteMusic = nil }
         lastSent = ""
     }
 
     private func broadcastState() {
         guard ready, phase == .hosting || phase == .connected || phase == .joining, let m = data?.music else { return }
-        let payload: [String: Any] = ["state": m.playing ? "playing" : "paused", "track": m.title, "artist": m.artist]
+        // Position (arrondie à la seconde) + durée → barre de progression et paroles synchronisées côté web.
+        var payload: [String: Any] = ["state": m.playing ? "playing" : "paused", "track": m.title, "artist": m.artist,
+                                      "position": m.position.rounded()]
+        if m.duration > 0 { payload["duration"] = m.duration.rounded() }
         guard let json = try? JSONSerialization.data(withJSONObject: payload), let s = String(data: json, encoding: .utf8) else { return }
         if s == lastSent { return }
         lastSent = s
@@ -91,6 +101,10 @@ final class PartyBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 default: break
                 }
             case "error": self.phase = .error
+            case "remote-state":
+                if let p = d["payload"] as? [String: Any], let t = p["track"] as? String, let a = p["artist"] as? String, let st = p["state"] as? String {
+                    self.remoteMusic = RemoteMusic(title: t, artist: a, playing: st == "playing")
+                }
             default: break
             }
         }

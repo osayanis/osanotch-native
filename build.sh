@@ -43,6 +43,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 echo "▶︎ signature avec certificat développeur (évite les redemandes de permissions)…"
-codesign --force --deep --sign "Apple Development: yanisb03@icloud.com (Q7R38U82N7)" "$APP" 2>/dev/null || true
+# SIGN_ID peut être forcé ; sinon 1er certificat « Apple Development » du trousseau,
+# et à défaut signature ad-hoc (« - ») pour que n'importe qui puisse compiler.
+SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/{print $2; exit}')}"
+codesign --force --deep --sign "${SIGN_ID:--}" "$APP" 2>/dev/null || true
 
 echo "✅ $APP prêt."

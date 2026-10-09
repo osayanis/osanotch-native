@@ -8,6 +8,7 @@ struct OsaCharacter: View {
     var mood: Mood
     var accent: Color          // teinte du halo (couleur pochette)
     var size: CGFloat
+    var wave: Bool = false     // la mascotte fait « coucou » de la main
 
     var body: some View {
         TimelineView(.animation) { tl in
@@ -55,6 +56,23 @@ struct OsaCharacter: View {
 
         // Corps : crème clair, doux (esprit Mochi mais le nôtre)
         let bw = R * 2.0, bh = R * 1.86
+
+        // Bras « coucou » : dessiné AVANT le corps (le corps masque l'épaule) → seul
+        // l'avant-bras levé dépasse sur le côté droit, et il salue vers l'extérieur.
+        if wave {
+            let cream = Color(red: 0.97, green: 0.95, blue: 0.92)
+            var arm = ctx                        // copie : transform indépendant, même toile
+            arm.translateBy(x: bw * 0.30, y: -bh * 0.02)   // épaule, côté droit
+            let swing = 0.62 + 0.42 * sin(t * 9) // oscillation vers l'extérieur (droite)
+            arm.rotate(by: .radians(swing))
+            let armW = R * 0.30, armLen = R * 1.1
+            arm.fill(Path(roundedRect: CGRect(x: -armW / 2, y: -armLen, width: armW, height: armLen),
+                          cornerSize: CGSize(width: armW / 2, height: armW / 2)),
+                     with: .color(cream))
+            arm.fill(Path(ellipseIn: CGRect(x: -armW * 0.72, y: -armLen - armW * 0.5, width: armW * 1.45, height: armW * 1.45)),
+                     with: .color(cream))   // la main
+        }
+
         let bodyRect = CGRect(x: -bw / 2, y: -bh / 2, width: bw, height: bh)
         let body = Path(roundedRect: bodyRect, cornerSize: CGSize(width: bw * 0.44, height: bh * 0.48))
         ctx.fill(body, with: .linearGradient(

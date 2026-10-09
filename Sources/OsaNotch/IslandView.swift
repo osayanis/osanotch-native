@@ -33,6 +33,7 @@ struct Waveform: View {
 struct IslandView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var data: SystemData
+    @ObservedObject var castBridge: CastBridge
     @ObservedObject var updater = AutoUpdater.shared
 
     var playing: Bool { data.music?.playing ?? false }
@@ -44,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW) }
+    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW, theater: model.theater, theaterSize: model.theaterSize) }
 
     var body: some View {
         let exp = model.expanded
@@ -54,6 +55,7 @@ struct IslandView: View {
                 if exp { content.transition(.opacity) }
                 else if model.view == .notification && model.showNotifBanner { notifBanner.transition(.opacity) }
                 else { collapsedView.transition(.opacity) }
+                castLayer   // moteur OsaCast persistant : reste monté même notch replié
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
             .opacity(!exp && !hudActive && !playing && !model.showNotifBanner && !model.dropHover ? 0 : 1)
@@ -72,6 +74,46 @@ struct IslandView: View {
         .ignoresSafeArea()
         .onAppear { generateGreeting() }
         .onChange(of: friendBridge.myName) { _, _ in generateGreeting() }
+    }
+
+    // ── OsaCast : le WKWebView doit rester attaché à la fenêtre même quand le notch
+    // se replie, sinon WebKit suspend la capture d'écran et le spectateur perd le flux.
+    // On le garde donc monté en permanence ici (1×1 invisible hors visionnage).
+    var castHosting: Bool { !castBridge.code.isEmpty }
+    var castWatching: Bool { castBridge.code.isEmpty && (castBridge.phase == .connected || castBridge.phase == .live) }
+    var castMounted: Bool { castHosting || castWatching || castBridge.phase == .connecting }
+    var castShowsVideo: Bool { model.expanded && model.view == .cast && castWatching }
+
+    @ViewBuilder var castLayer: some View {
+        if castMounted {
+            ZStack(alignment: .topTrailing) {
+                HiddenWeb(webView: castBridge.webView)
+                    .allowsHitTesting(castShowsVideo)
+                if castShowsVideo {
+                    // Barre de contrôle flottante : agrandir / réduire + quitter.
+                    HStack(spacing: 8) {
+                        Button { model.theater.toggle() } label: {
+                            Image(systemName: model.theater ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 30, height: 30).background(.black.opacity(0.55), in: Circle())
+                        }.buttonStyle(.plain)
+                        Button {
+                            model.theater = false
+                            castBridge.stop()
+                            model.view = .home
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 30, height: 30).background(.black.opacity(0.55), in: Circle())
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(14)
+                }
+            }
+            .frame(width: castShowsVideo ? size.width : 1, height: castShowsVideo ? size.height : 1)
+            .clipShape(IslandShape(bottom: model.expanded ? 28 : 12))
+            .opacity(castShowsVideo ? 1 : 0.001)
+        }
     }
 
     @ViewBuilder var content: some View {
@@ -110,7 +152,18 @@ struct IslandView: View {
     @ObservedObject var friendBridge = FriendBridge.shared
     @State private var friendCodeInput = ""
     @State private var greeting = "Salut !"
-    
+    @State private var waving = false
+    @State private var waveTask: DispatchWorkItem?
+
+    // Déclenche un petit « coucou » de la mascotte sur l'accueil.
+    private func triggerWave() {
+        waveTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) { waving = true }
+        let t = DispatchWorkItem { withAnimation(.easeIn(duration: 0.25)) { waving = false } }
+        waveTask = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6, execute: t)
+    }
+
     private func generateGreeting() {
         let name = friendBridge.myName.isEmpty ? "l'ami" : friendBridge.myName
         let msgs = [
@@ -280,11 +333,11 @@ struct IslandView: View {
         let icon = isVol ? volumeIcon(model.sysObs.volume) : "sun.max.fill"
         return VStack(spacing: 0) {
             Spacer(minLength: 0).frame(height: model.notchH)
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.white)
-                    .frame(width: 20)
+                    .frame(width: 16)
                     .contentTransition(.symbolEffect(.replace))
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -295,10 +348,10 @@ struct IslandView: View {
                 }
                 .frame(height: 5)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 14)
             .frame(height: 30)
         }
-        .frame(width: model.notchW + 190, height: model.notchH + 30)
+        .frame(width: model.notchW, height: model.notchH + 30)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.volume)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.brightness)
     }
@@ -314,6 +367,7 @@ struct IslandView: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        .onAppear { triggerWave() }
     }
 
     // Accueil au repos : mascotte + raccourcis (et notifications si présentes).
@@ -322,7 +376,7 @@ struct IslandView: View {
             if !model.notifications.isEmpty && !model.dropHover {
                 HStack(spacing: 16) {
                     VStack(spacing: -2) {
-                        OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54)
+                        OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54, wave: waving)
                         Text(greeting).font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
                     }
                     .frame(width: 80)
@@ -453,7 +507,7 @@ struct IslandView: View {
                 }
                 .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 4)
             } else {
-                OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60)
+                OsaCharacter(model: model, mood: mood, accent: data.accent, size: 60, wave: waving)
                     .padding(.top, 4)
                     .padding(.bottom, -2)
                 Text(model.dropHover ? "Dépose ton fichier" : "OsaLabs")

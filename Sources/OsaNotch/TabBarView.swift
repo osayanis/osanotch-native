@@ -13,20 +13,18 @@ struct TabBarView: View {
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
             Spacer()
-            tbButton("play.rectangle.fill", .cast)
-            tbButton("music.note", .party)
-            if dropHover { Text("Lâcher pour AirDrop").font(.system(size: 10, weight: .semibold)).foregroundColor(accent) }
-            
-            if let b = battery {
-                HStack(spacing: 5) {
+            // Groupe de droite resserré : il se tasse vers le bord et s'éloigne de l'encoche.
+            HStack(spacing: 8) {
+                tbButton("play.rectangle.fill", .cast)
+                tbButton("music.note", .party)
+                if dropHover { Text("Lâcher ici").font(.system(size: 10, weight: .semibold)).foregroundColor(accent) }
+                if let b = battery {
                     BatteryGlyph(percent: b.percent, charging: b.charging)
-                    Text("\(b.percent)%").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                        .foregroundColor(lowBat ? .red : .white)
+                        .padding(.leading, 4)
                 }
+                OsaCharacter(model: model, mood: .idle, accent: accent, size: 16)
             }
-            
-            OsaCharacter(model: model, mood: .idle, accent: accent, size: 16)
-        }.padding(.horizontal, 18).padding(.top, 11)
+        }.padding(.leading, 18).padding(.trailing, 14).padding(.top, 11)
     }
 
     func tbButton(_ icon: String, _ target: AppView) -> some View {

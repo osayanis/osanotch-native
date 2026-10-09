@@ -23,7 +23,20 @@ final class AppModel: ObservableObject {
     @Published var notchH: CGFloat = 32
     @Published var viewHeight: CGFloat = 260
     @Published var screenW: CGFloat = 1440
-    @Published var droppedURL: URL? = nil
+    // Mode cinéma OsaCast : agrandit le notch sur une grande partie de l'écran
+    @Published var theater: Bool = false
+    @Published var theaterSize: CGSize = CGSize(width: 1100, height: 640)
+    // Presse-papier de fichiers (plusieurs fichiers, persistés)
+    let shelf = FileShelf()
+    private var shelfSink: AnyCancellable?
+    // Compat : « le » fichier courant = la sélection du presse-papier, sinon le plus récent.
+    var droppedURL: URL? {
+        get { shelf.selected ?? shelf.items.first }
+        set {
+            if let u = newValue { shelf.add([u]) }
+            else if let cur = droppedURL { shelf.remove(cur) }
+        }
+    }
     @Published var notification: String? = nil
     @Published var notifications: [OsaNotif] = []
     @Published var showNotifBanner: Bool = false
@@ -48,6 +61,8 @@ final class AppModel: ObservableObject {
         if !ax || !screen || !cam || !cal {
             self.view = .onboarding
         }
+        // Toute vue qui observe le modèle se rafraîchit quand le presse-papier change.
+        shelfSink = shelf.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
         clipboard.start()
@@ -72,17 +87,18 @@ final class AppModel: ObservableObject {
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero) -> CGSize {
+        if theater && view == .cast { return theaterSize }
         if !expanded {
             // Bannière de notification : descend sous l'encoche, visible sans survol.
             if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
-            if hud { return CGSize(width: notchW + 190, height: notchH + 30) }
+            if hud { return CGSize(width: notchW, height: notchH + 30) }
             return CGSize(width: playing ? notchW + 56 : notchW, height: notchH)
         }
         _ = sw
         switch view {
-        case .home:         return playing ? CGSize(width: 560, height: 168) : CGSize(width: 480, height: 185)
+        case .home:         return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 185)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)
@@ -126,7 +142,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.notchH = screen.safeAreaInsets.top
             model.notchW = sf.width - (screen.auxiliaryTopLeftArea?.width ?? 0) - (screen.auxiliaryTopRightArea?.width ?? 0)
         }
-        let frame = NSRect(x: sf.midX - Island.winW / 2, y: sf.maxY - Island.winH, width: Island.winW, height: Island.winH)
+        // Taille du mode cinéma : grande partie de l'écran, centrée sous la barre de menu.
+        model.theaterSize = CGSize(width: min(sf.width * 0.84, 1280), height: sf.height * 0.76)
+        // Le panneau est fixe et assez grand pour contenir le mode cinéma : on ne le
+        // redimensionne JAMAIS (un panneau délégué à SkyLight se repositionne mal).
+        // Seul le CONTENU grandit/rétrécit ; le notch, aligné en haut-centre, ne bouge pas.
+        let panelW = model.theaterSize.width + 40
+        let panelH = model.theaterSize.height + 20
+        let frame = NSRect(x: sf.midX - panelW / 2, y: sf.maxY - panelH, width: panelW, height: panelH)
 
         panel = IslandPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -142,8 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isMovable = false
         // Laisse SwiftUI gérer le click-through grâce à .clear
 
-        let host = KeyHostingView(rootView: IslandView(model: model, data: model.data))
-        host.frame = NSRect(x: 0, y: 0, width: Island.winW, height: Island.winH)
+        let host = KeyHostingView(rootView: IslandView(model: model, data: model.data, castBridge: model.castBridge))
+        host.frame = NSRect(x: 0, y: 0, width: panelW, height: panelH)
         host.autoresizingMask = [.width, .height]
         host.registerForDraggedTypes([.fileURL])
         panel.contentView = host
@@ -182,16 +205,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard cc != lastProcessedDragCount else { return e }
             lastProcessedDragCount = cc
 
-            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notifBanner: self.model.showNotifBanner, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW)
+            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notifBanner: self.model.showNotifBanner, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW, theater: self.model.theater, theaterSize: self.model.theaterSize)
             let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
 
             // On n'ajoute le fichier QUE si le glisser se termine réellement sur le notch.
             guard shapeRect.contains(p),
                   pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]),
                   let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-                  let url = urls.first else { return e }
+                  !urls.isEmpty else { return e }
             DispatchQueue.main.async {
-                self.model.droppedURL = url
+                self.model.shelf.add(urls)   // tous les fichiers glissés, pas seulement le 1er
                 self.model.view = .drop
                 self.model.expanded = true
             }
@@ -223,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func closeAll() {
+        model.theater = false
         model.view = .home
         model.expanded = false
         panel.orderOut(nil)
@@ -235,10 +259,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let sf = (panel.screen ?? NSScreen.main)?.frame else { return }
         let playing = model.data.music?.playing ?? false
 
+        // Mode cinéma OsaCast : le notch reste grand ouvert, on ignore le survol.
+        if model.theater {
+            model.expanded = true
+            model.dropHover = false
+            return
+        }
+
         let trigW: CGFloat = 300, trigH: CGFloat = 44
         let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW)
+        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW, theater: model.theater, theaterSize: model.theaterSize)
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
 
         // Cas spécial notifications : la bannière reste visible sans survol ;

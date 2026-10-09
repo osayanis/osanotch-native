@@ -18,21 +18,18 @@ struct OsaCastView: View {
             TabBarView(model: model, accent: accent, dropHover: false, battery: model.data.battery, lowBat: (model.data.battery?.percent ?? 100) < 20)
 
             ZStack {
-                // Moteur WebRTC : caché (1×1) hors visionnage, plein cadre en direct.
-                HiddenWeb(webView: bridge.webView)
-                    .frame(maxWidth: watching ? .infinity : 1, maxHeight: watching ? .infinity : 1)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .opacity(watching ? 1 : 0.02)
-
+                // Le moteur WebRTC (WKWebView) est monté en permanence par IslandView (castLayer)
+                // pour survivre au repli du notch ; ici on n'affiche que les boîtes de contrôle.
                 if !watching {
                     HStack(spacing: 12) {
                         diffuserBox
                         regarderBox
                     }
                     .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+                } else {
+                    Color.clear   // castLayer (IslandView) recouvre cette zone avec la vidéo
                 }
             }
-            .padding(watching ? 12 : 0)
             Spacer(minLength: 0)
         }
         .onAppear {

@@ -8,3 +8,8 @@ test_*.swift
 rewrite_*.swift
 fix_*.swift
 fix_*.txt
+OsaNotch.dmg
+latest.json
+crash_log.txt
+.swiftpm/xcode/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/

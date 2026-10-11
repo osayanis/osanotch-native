@@ -13,7 +13,8 @@ struct OsaDropView: View {
     @State private var sendingURL: URL?
     @ObservedObject var bridge: DropBridge
 
-    static func gen() -> String { String((0..<4).map { _ in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()! }) }
+    // 6 caractères, comme osadrop.osalabs.fr (interopérable dans les deux sens).
+    static func gen() -> String { String((0..<6).map { _ in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()! }) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,14 +179,14 @@ struct OsaDropView: View {
                             TextField("CODE", text: $entry)
                                 .font(.system(size: 18, weight: .bold, design: .monospaced))
                                 .multilineTextAlignment(.center)
-                                .frame(width: 90, height: 32)
+                                .frame(width: 110, height: 32)
                                 .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)))
                                 .textFieldStyle(.plain)
                                 .foregroundColor(.white)
                                 .onChange(of: entry) { _, new in
                                     entry = new.uppercased().filter { $0.isLetter || $0.isNumber }
-                                    if entry.count > 4 { entry = String(entry.prefix(4)) }
-                                    if entry.count == 4 {
+                                    if entry.count > 6 { entry = String(entry.prefix(6)) }
+                                    if entry.count == 6 {
                                         bridge.receive(code: entry)
                                     }
                                 }

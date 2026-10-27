@@ -10,8 +10,8 @@ struct OsaCastView: View {
     @State private var entry: String = ""
 
     var hosting: Bool { !bridge.code.isEmpty }
-    var live: Bool { bridge.phase == .connected || bridge.phase == .live }
-    var watching: Bool { entry.count >= 4 && (bridge.phase == .connected || bridge.phase == .live) && bridge.code.isEmpty }
+    var live: Bool { bridge.phase == .connected || bridge.phase == .live || bridge.phase == .reconnecting }   // une coupure passagère garde l'affichage
+    var watching: Bool { entry.count >= 4 && live && bridge.code.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {

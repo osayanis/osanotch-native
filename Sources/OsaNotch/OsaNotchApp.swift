@@ -8,13 +8,27 @@ import EventKit
 enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding }
 
 struct OsaNotif: Identifiable, Equatable {
+    enum Source { case ai, messages, mail, huisClos }
     let id = UUID()
-    let text: String
-    let date: Date
+    let source: Source
+    let title: String
+    let body: String
+    var date = Date()
+    var count = 1                    // regroupées : plusieurs messages du même expéditeur
+
+    /// Appli d'origine : icône, et ouverture au clic.
+    var bundleID: String? {
+        switch source {
+        case .ai: return nil
+        case .messages: return "com.apple.MobileSMS"
+        case .mail: return "com.apple.mail"
+        case .huisClos: return "fr.kinam.HuisClos"
+        }
+    }
+    var text: String { body.isEmpty ? title : body }
 }
 
 final class AppModel: ObservableObject {
-    @Published var cursor: CGPoint = .zero
     @Published var expanded: Bool = false
     @Published var view: AppView = .home
     @Published var data = SystemData()
@@ -45,6 +59,9 @@ final class AppModel: ObservableObject {
     private var bannerTimer: Timer?
     
     let aiTracker = AITracker()
+    let feed = NotificationFeed()
+    let suite = SuiteLink()
+    private var suiteSinks = Set<AnyCancellable>()
     let clipboard = ClipboardManager()
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
     let dropBridge = DropBridge()
@@ -70,23 +87,72 @@ final class AppModel: ObservableObject {
         shelfSink = shelf.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
+        // Messages, Mail (Centre de notifications) et Huis clos (veille de l'appli verrouillée)
+        feed.onNotif = { [weak self] n in self?.push(n) }
+        feed.start()
+        suite.onHuisClos = { [weak self] name in
+            self?.push(OsaNotif(source: .huisClos, title: "Huis clos", body: "Message reçu de la conversation \(name)"))
+        }
+        // OsaWallpaper s'occupe du son / de la luminosité : le notch n'affiche plus les siens.
+        suite.$wallpaperVolume.removeDuplicates().sink { [weak self] on in self?.sysObs.deferVolume = on }.store(in: &suiteSinks)
+        suite.$wallpaperBrightness.removeDuplicates().sink { [weak self] on in self?.sysObs.deferBrightness = on }.store(in: &suiteSinks)
+        feed.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &suiteSinks)
         clipboard.start()
         
         AutoUpdater.shared.checkForUpdates()
     }
 
-    // Fait apparaître une notification en bannière (sans survol), puis la stocke.
+    /// Assistant IA (Claude Code, API locale) : texte seul.
     func pushNotif(_ text: String) {
-        notification = text
-        notifications.insert(OsaNotif(text: text, date: Date()), at: 0)
-        if notifications.count > 8 { notifications.removeLast(notifications.count - 8) }
+        push(OsaNotif(source: .ai, title: "Assistant IA", body: text))
+    }
+
+    // Fait apparaître une notification en bannière (sans survol), puis la stocke.
+    func push(_ n: OsaNotif) {
+        var n = n
+        // Rafale du même expéditeur : une seule ligne « +2 », pas trois bannières.
+        if let first = notifications.first, first.source == n.source, first.title == n.title,
+           n.date.timeIntervalSince(first.date) < 90 {
+            n.count = first.count + 1
+            notifications[0] = n
+        } else {
+            notifications.insert(n, at: 0)
+            if notifications.count > 12 { notifications.removeLast(notifications.count - 12) }
+        }
+        notification = n.text
+        // Déjà dans l'appli d'origine (on lit la conversation) : rangée sans bannière.
+        if let id = n.bundleID, NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased() == id.lowercased() { return }
+        // Notch ouvert sur un outil (OsaDrop, OsaCast…) : on ne coupe pas ce qu'on fait.
+        if expanded && view != .home && view != .notification { return }
         view = .notification
         showNotifBanner = true
         bannerTimer?.invalidate()
-        bannerTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: false) { [weak self] _ in
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: n.source == .ai ? 4.5 : 6, repeats: false) { [weak self] _ in
             self?.showNotifBanner = false
         }
     }
+
+    /// Clic sur une notification : ouvre l'appli d'origine.
+    func open(_ n: OsaNotif) {
+        guard let id = n.bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        showNotifBanner = false
+    }
+
+    /// Le notch visible : n'affecte une valeur publiée que si elle change (chaque affectation
+    /// redessine toute la vue, même avec la même valeur).
+    func set<T: Equatable>(_ kp: ReferenceWritableKeyPath<AppModel, T>, _ v: T) {
+        if self[keyPath: kp] != v { self[keyPath: kp] = v }
+    }
+
+    var hudActive: Bool { sysObs.showVolumeHUD || sysObs.showBrightnessHUD }
+    var playing: Bool { data.music?.playing ?? false }
+
+    var shape: CGSize {
+        Island.shapeSize(expanded: expanded, view: view, playing: playing, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+    }
+    /// L'île est-elle dessinée (sinon seule l'encoche physique se voit) ?
+    var islandVisible: Bool { expanded || hudActive || playing || showNotifBanner || dropHover }
 }
 
 enum Island {
@@ -96,7 +162,8 @@ enum Island {
         if theater && view == .cast { return theaterSize }
         if !expanded {
             // Bannière de notification : descend sous l'encoche, visible sans survol.
-            if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52) }
+            // Avec le son / la luminosité en même temps, la barre se range dessous.
+            if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52 + (hud ? 28 : 0)) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
             if hud { return CGSize(width: notchW, height: notchH + 30) }
             return CGSize(width: playing ? notchW + 56 : notchW, height: notchH)
@@ -198,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         let dropHandler: (NSEvent) -> NSEvent? = { [weak self] e in
             guard let self = self else { return e }
-            self.model.isDragging = false
+            self.model.set(\.isDragging, false)
             let p = NSEvent.mouseLocation
             guard let sf = (self.panel.screen ?? NSScreen.main)?.frame else { return e }
 
@@ -210,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard cc != lastProcessedDragCount else { return e }
             lastProcessedDragCount = cc
 
-            let shape = Island.shapeSize(expanded: self.model.expanded, view: self.model.view, playing: self.model.data.music?.playing ?? false, hud: self.model.sysObs.showVolumeHUD || self.model.sysObs.showBrightnessHUD, notifBanner: self.model.showNotifBanner, notchW: self.model.notchW, notchH: self.model.notchH, vh: self.model.viewHeight, sw: self.model.screenW, theater: self.model.theater, theaterSize: self.model.theaterSize)
+            let shape = self.model.shape
             let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
 
             // On n'ajoute le fichier QUE si le glisser se termine réellement sur le notch.
@@ -231,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
             let pb = NSPasteboard(name: .drag)
-            self?.model.isDragging = pb.types?.contains(.fileURL) ?? false
+            self?.model.set(\.isDragging, pb.types?.contains(.fileURL) ?? false)
         }
 
         // Donner le focus clavier UNE SEULE FOIS à l'ouverture d'une vue à saisie.
@@ -244,6 +311,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         localServer.onNotify = { [weak self] msg in self?.model.pushNotif(msg) }
         localServer.start()
+
+        model.suite.start(display: screen.displayID)
+        // Sans « Accès complet au disque », pas de Messages ni de Mail : on le dit une fois.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.model.feed.needsAccess, self.model.view != .onboarding else { return }
+            self.model.push(OsaNotif(source: .ai, title: "Messages et Mail", body: "Autorise l'accès complet au disque (clic sur la liste)"))
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -260,21 +334,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func tick() {
         let p = NSEvent.mouseLocation
-        model.cursor = p
         guard let sf = (panel.screen ?? NSScreen.main)?.frame else { return }
-        let playing = model.data.music?.playing ?? false
+        defer { model.suite.update(bottom: model.islandVisible ? model.shape.height : model.notchH) }
 
         // Mode cinéma OsaCast : le notch reste grand ouvert, on ignore le survol.
         if model.theater {
-            model.expanded = true
-            model.dropHover = false
+            model.set(\.expanded, true)
+            model.set(\.dropHover, false)
             return
         }
 
         let trigW: CGFloat = 300, trigH: CGFloat = 44
         let trigger = CGRect(x: sf.midX - trigW / 2, y: sf.maxY - trigH, width: trigW, height: trigH)
 
-        let shape = Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW, theater: model.theater, theaterSize: model.theaterSize)
+        let shape = model.shape
         let shapeRect = CGRect(x: sf.midX - shape.width / 2, y: sf.maxY - shape.height, width: shape.width, height: shape.height)
 
         // Cas spécial notifications : la bannière reste visible sans survol ;
@@ -282,28 +355,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if model.view == .notification {
             let over = shapeRect.insetBy(dx: -16, dy: -16).contains(p)
             if over {
-                model.expanded = true
+                model.set(\.expanded, true)
             } else if model.expanded {
                 // L'utilisateur a consulté puis quitté → retour accueil.
-                model.expanded = false
-                model.view = .home
+                model.set(\.expanded, false)
+                model.set(\.view, .home)
             } else if !model.showNotifBanner {
                 // Bannière expirée et pas de survol → retour accueil.
-                model.view = .home
+                model.set(\.view, .home)
             }
-            model.dropHover = false
+            model.set(\.dropHover, false)
             return
         }
 
         if !model.expanded {
-            if trigger.contains(p) { model.expanded = true }
-        } else {
-            if !shapeRect.insetBy(dx: -16, dy: -16).contains(p) {
-                model.expanded = false
-            }
+            if trigger.contains(p) { model.set(\.expanded, true) }
+        } else if !shapeRect.insetBy(dx: -16, dy: -16).contains(p) {
+            model.set(\.expanded, false)
         }
 
         // Gérer le survol visuel du Drag & Drop
-        model.dropHover = model.isDragging && shapeRect.contains(p)
+        model.set(\.dropHover, model.isDragging && shapeRect.contains(p))
     }
 }

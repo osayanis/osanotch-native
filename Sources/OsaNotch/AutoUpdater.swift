@@ -13,7 +13,7 @@ final class AutoUpdater: ObservableObject {
     private var downloadUrl: URL? = nil
 
     // Version actuelle (définie dans le code ; bumpée par publish.sh)
-    private let currentVersion = "1.0.0"
+    private let currentVersion = "1.0.1"
 
     func checkForUpdates() {
         guard let url = URL(string: feedURL) else { return }

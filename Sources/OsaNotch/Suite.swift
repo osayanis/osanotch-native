@@ -6,12 +6,17 @@ import Combine
 //   com.osalabs.suite.hello      « je viens d'arriver » → les autres renvoient leur état
 //   com.osalabs.suite.wallpaper  OsaWallpaper : volume / brightness (Bool) = ses pastilles s'en chargent
 //   com.osalabs.suite.notch      OsaNotch : bottom (points sous le haut de l'écran à encoche), display
-//   fr.kinam.HuisClos.messageRecu  Huis clos : conversation (nom seul, jamais le texte)
+// Et le protocole de Huis clos (appli de Kinam, voir son README « L'avis dans l'encoche ») :
+//   fr.kinam.HuisClos.nonLus   Huis clos → nombre (Int) de messages non lus, à chaque changement,
+//                              même verrouillé ; jamais le nom ni le texte
+//   fr.kinam.HuisClos.demande  notch → Huis clos : « redis-moi où on en est » (au lancement)
 enum Suite {
     static let hello = Notification.Name("com.osalabs.suite.hello")
     static let wallpaper = Notification.Name("com.osalabs.suite.wallpaper")
     static let notch = Notification.Name("com.osalabs.suite.notch")
-    static let huisClos = Notification.Name("fr.kinam.HuisClos.messageRecu")
+    static let huisClosUnread = Notification.Name("fr.kinam.HuisClos.nonLus")
+    static let huisClosAsk = Notification.Name("fr.kinam.HuisClos.demande")
+    static let huisClosID = "fr.kinam.HuisClos"
     static let wallpaperID = "com.osalabs.osawallpaper"
 
     static func post(_ name: Notification.Name, _ info: [String: Any] = [:]) {
@@ -24,7 +29,8 @@ final class SuiteLink: ObservableObject {
     /// OsaWallpaper affiche ses propres pastilles son / luminosité : le notch s'efface.
     @Published private(set) var wallpaperVolume = false
     @Published private(set) var wallpaperBrightness = false
-    var onHuisClos: ((String) -> Void)?
+    /// Nombre de messages non lus annoncé par Huis clos (0 = tout est lu, ou appli quittée).
+    var onHuisClos: ((Int) -> Void)?
 
     private var lastBottom: CGFloat = -1
     private var display: CGDirectDisplayID = 0
@@ -40,17 +46,25 @@ final class SuiteLink: ObservableObject {
         tokens.append(dc.addObserver(forName: Suite.hello, object: nil, queue: .main) { [weak self] _ in
             self?.announce(force: true)
         })
-        tokens.append(dc.addObserver(forName: Suite.huisClos, object: nil, queue: .main) { [weak self] n in
-            guard let name = n.userInfo?["conversation"] as? String, !name.isEmpty else { return }
-            self?.onHuisClos?(name)
+        tokens.append(dc.addObserver(forName: Suite.huisClosUnread, object: nil, queue: .main) { [weak self] n in
+            guard let count = (n.userInfo?["nombre"] as? NSNumber)?.intValue else { return }
+            self?.onHuisClos?(max(0, count))
         })
-        // OsaWallpaper quitté (ou planté) sans prévenir : le notch reprend la main.
         tokens.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] n in
-            guard (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == Suite.wallpaperID else { return }
-            self?.wallpaperVolume = false
-            self?.wallpaperBrightness = false
+            switch (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier {
+            case Suite.wallpaperID?:
+                // OsaWallpaper quitté (ou planté) sans prévenir : le notch reprend la main.
+                self?.wallpaperVolume = false
+                self?.wallpaperBrightness = false
+            case Suite.huisClosID?:
+                // Huis clos quitté (Cmd + Q) : il ne compte plus rien et n'annonce pas 0.
+                self?.onHuisClos?(0)
+            default: break
+            }
         })
         Suite.post(Suite.hello, ["app": "osanotch"])
+        // Huis clos déjà lancé redonne son compte (il ne répond rien s'il ne sait encore rien).
+        Suite.post(Suite.huisClosAsk)
     }
 
     /// Bas du notch visible, en points depuis le haut de l'écran : OsaWallpaper place ses

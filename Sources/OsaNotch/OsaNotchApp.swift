@@ -54,9 +54,12 @@ final class AppModel: ObservableObject {
     @Published var notification: String? = nil
     @Published var notifications: [OsaNotif] = []
     @Published var showNotifBanner: Bool = false
+    /// Messages non lus dans Huis clos : pastille sur le notch replié jusqu'à la lecture.
+    @Published var huisClosUnread = 0
     @Published var dropHover: Bool = false
     @Published var isDragging: Bool = false
     private var bannerTimer: Timer?
+    private var bannerSource: OsaNotif.Source?
     
     let aiTracker = AITracker()
     let feed = NotificationFeed()
@@ -87,12 +90,10 @@ final class AppModel: ObservableObject {
         shelfSink = shelf.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         aiTracker.onFinish = { [weak self] msg in self?.pushNotif(msg) }
         aiTracker.start()
-        // Messages, Mail (Centre de notifications) et Huis clos (veille de l'appli verrouillée)
+        // Messages et Mail (Centre de notifications) ; Huis clos annonce lui-même son nombre de non lus
         feed.onNotif = { [weak self] n in self?.push(n) }
         feed.start()
-        suite.onHuisClos = { [weak self] name in
-            self?.push(OsaNotif(source: .huisClos, title: "Huis clos", body: "Message reçu de la conversation \(name)"))
-        }
+        suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
         // OsaWallpaper s'occupe du son / de la luminosité : le notch n'affiche plus les siens.
         suite.$wallpaperVolume.removeDuplicates().sink { [weak self] on in self?.sysObs.deferVolume = on }.store(in: &suiteSinks)
         suite.$wallpaperBrightness.removeDuplicates().sink { [weak self] on in self?.sysObs.deferBrightness = on }.store(in: &suiteSinks)
@@ -125,10 +126,34 @@ final class AppModel: ObservableObject {
         // Notch ouvert sur un outil (OsaDrop, OsaCast…) : on ne coupe pas ce qu'on fait.
         if expanded && view != .home && view != .notification { return }
         view = .notification
+        bannerSource = n.source
         showNotifBanner = true
         bannerTimer?.invalidate()
         bannerTimer = Timer.scheduledTimer(withTimeInterval: n.source == .ai ? 4.5 : 6, repeats: false) { [weak self] _ in
             self?.showNotifBanner = false
+        }
+    }
+
+    /// Huis clos n'envoie que son nombre de messages non lus (ni nom, ni texte) : bannière quand il
+    /// augmente, une seule ligne tenue à jour dans la liste, et pastille jusqu'à ce que tout soit lu.
+    func setHuisClos(_ count: Int) {
+        let old = huisClosUnread
+        guard count != old else { return }
+        huisClosUnread = count
+        let body = count == 1 ? "1 nouveau message" : "\(count) nouveaux messages"
+        guard count > 0 else {
+            notifications.removeAll { $0.source == .huisClos }
+            // Lu entre-temps (dans Huis clos) : la bannière en cours n'a plus lieu d'être
+            if showNotifBanner && bannerSource == .huisClos { showNotifBanner = false }
+            return
+        }
+        if count > old {
+            notifications.removeAll { $0.source == .huisClos }
+            push(OsaNotif(source: .huisClos, title: "Huis clos", body: body))
+        } else if let i = notifications.firstIndex(where: { $0.source == .huisClos }) {
+            // Une partie lue : on corrige le nombre, sans bannière
+            let n = notifications[i]
+            notifications[i] = OsaNotif(source: .huisClos, title: n.title, body: body, date: n.date)
         }
     }
 
@@ -149,16 +174,16 @@ final class AppModel: ObservableObject {
     var playing: Bool { data.music?.playing ?? false }
 
     var shape: CGSize {
-        Island.shapeSize(expanded: expanded, view: view, playing: playing, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+        Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosUnread > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
     }
     /// L'île est-elle dessinée (sinon seule l'encoche physique se voit) ?
-    var islandVisible: Bool { expanded || hudActive || playing || showNotifBanner || dropHover }
+    var islandVisible: Bool { expanded || hudActive || playing || huisClosUnread > 0 || showNotifBanner || dropHover }
 }
 
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, badge: Bool = false, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero) -> CGSize {
         if theater && view == .cast { return theaterSize }
         if !expanded {
             // Bannière de notification : descend sous l'encoche, visible sans survol.
@@ -166,7 +191,8 @@ enum Island {
             if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52 + (hud ? 28 : 0)) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
             if hud { return CGSize(width: notchW, height: notchH + 30) }
-            return CGSize(width: playing ? notchW + 56 : notchW, height: notchH)
+            // Musique et / ou pastille Huis clos : de part et d'autre de l'encoche physique.
+            return CGSize(width: playing || badge ? notchW + 56 : notchW, height: notchH)
         }
         _ = sw
         switch view {

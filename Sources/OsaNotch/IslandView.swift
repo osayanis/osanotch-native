@@ -59,7 +59,7 @@ struct IslandView: View {
                 bridgesLayer // ponts OsaDrop / OsaParty : idem, invisibles
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
-            .opacity(!exp && !hudActive && !playing && !model.showNotifBanner && !model.dropHover ? 0 : 1)
+            .opacity(!exp && !hudActive && !playing && model.huisClosUnread == 0 && !model.showNotifBanner && !model.dropHover ? 0 : 1)
             .frame(width: size.width, height: size.height)
             .clipShape(IslandShape(bottom: exp ? 28 : 12))
             Spacer(minLength: 0)
@@ -71,6 +71,7 @@ struct IslandView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
+        .animation(.spring(response: 0.46, dampingFraction: 0.82), value: model.huisClosUnread > 0)
         .animation(.spring(response: 0.44, dampingFraction: 0.8), value: model.showNotifBanner)
         .ignoresSafeArea()
         .onAppear { generateGreeting() }
@@ -369,11 +370,16 @@ struct IslandView: View {
 
     @ViewBuilder var collapsedView: some View {
         if hudActive { hudView }
-        else if playing {
-            // Pochette et égaliseur collés aux bords de l'encoche physique.
-            HStack(spacing: 0) { artwork(18, 5); Spacer(minLength: model.notchW); Waveform(color: data.accent, active: true) }
-                .padding(.horizontal, 7)
-                .frame(width: model.notchW + 56, height: model.notchH)
+        else if playing || model.huisClosUnread > 0 {
+            // Pochette et égaliseur collés aux bords de l'encoche physique. Messages Huis clos
+            // non lus : icône à gauche (sans musique) et nombre à droite, jusqu'à la lecture.
+            HStack(spacing: 0) {
+                if playing { artwork(18, 5) } else { huisClosIcon }
+                Spacer(minLength: model.notchW)
+                if model.huisClosUnread > 0 { unreadBadge } else { Waveform(color: data.accent, active: true) }
+            }
+            .padding(.horizontal, 7)
+            .frame(width: model.notchW + 56, height: model.notchH)
         }
         else if model.dropHover {
             HStack(spacing: 0) { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
@@ -382,6 +388,21 @@ struct IslandView: View {
             // Notch au repos : l'île est invisible, inutile d'y animer la mascotte (30 images/s).
             Color.clear.frame(width: model.notchW, height: model.notchH)
         }
+    }
+
+    var huisClosIcon: some View {
+        notifIcon(OsaNotif(source: .huisClos, title: "", body: ""), size: 18)
+    }
+
+    var unreadBadge: some View {
+        Text(model.huisClosUnread > 99 ? "99+" : "\(model.huisClosUnread)")
+            .font(.system(size: 10.5, weight: .heavy, design: .rounded)).monospacedDigit()
+            .foregroundColor(.black)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 16)
+            .background(Capsule().fill(data.accent))
+            .contentTransition(.numericText())
+            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.huisClosUnread)
+            .help("Messages non lus dans Huis clos")
     }
 
     func volumeIcon(_ v: Float) -> String {

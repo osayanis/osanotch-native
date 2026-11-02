@@ -616,12 +616,6 @@ struct IslandView: View {
                 }
                 .padding(.horizontal, 22).padding(.bottom, 6)
             }
-            
-            HStack(spacing: 8) {
-                appTile("Party", "music.note", data.services.party) { model.view = .party }
-                appTile("Drop", "paperplane.fill", data.services.drop) { model.view = .drop }
-                appTile("Cast", "play.rectangle.fill", data.services.cast) { model.view = .cast }
-            }.padding(.horizontal, 16).padding(.bottom, 8)
         }
     }
 
@@ -742,17 +736,6 @@ struct IslandView: View {
 
     func ctrl(_ icon: String, _ sz: CGFloat, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: icon).font(.system(size: sz)).foregroundColor(.white.opacity(0.65)) }.buttonStyle(.plain)
-    }
-
-    func appTile(_ label: String, _ icon: String, _ online: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
-                Text(label).font(.system(size: 10.5, weight: .medium)).foregroundColor(.white.opacity(0.65))
-                Circle().fill(online ? .green : Color.white.opacity(0.2)).frame(width: 4, height: 4)
-            }.frame(maxWidth: .infinity).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 11).fill(.white.opacity(0.06)))
-        }.buttonStyle(.plain)
     }
 
     func handleAirDrop(_ providers: [NSItemProvider]) -> Bool {

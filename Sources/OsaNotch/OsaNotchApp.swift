@@ -174,7 +174,10 @@ final class AppModel: ObservableObject {
     var playing: Bool { data.music?.playing ?? false }
 
     var shape: CGSize {
-        Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosUnread > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+        var s = Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosUnread > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+        // Bandeau « mise à jour disponible » de l'accueil : sa propre ligne en plus.
+        if expanded && view == .home && !playing && AutoUpdater.shared.updateAvailable != nil { s.height += 30 }
+        return s
     }
     /// L'île est-elle dessinée (sinon seule l'encoche physique se voit) ?
     var islandVisible: Bool { expanded || hudActive || playing || huisClosUnread > 0 || showNotifBanner || dropHover }
@@ -196,7 +199,8 @@ enum Island {
         }
         _ = sw
         switch view {
-        case .home:         return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 185)
+        // Raccourcis Party / Drop / Cast retirés (déjà dans la barre d'onglets) : accueil plus bas.
+        case .home:         return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 520, height: vh)
         case .party:        return CGSize(width: 500, height: vh)

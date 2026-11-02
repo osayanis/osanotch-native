@@ -11,6 +11,18 @@ class SystemObserver: ObservableObject {
     @Published var brightness: Float = 0.5
     @Published var showBrightnessHUD: Bool = false
 
+    /// OsaWallpaper est lancé et affiche ses propres pastilles : le notch laisse passer les
+    /// touches et n'affiche plus rien pour ce réglage (une seule barre à l'écran).
+    var deferVolume = false {
+        didSet { if deferVolume { showVolumeHUD = false } }
+    }
+    var deferBrightness = false {
+        didSet {
+            if deferBrightness { showBrightnessHUD = false; brightnessTimer?.invalidate(); brightnessTimer = nil }
+            else if brightnessTimer == nil { startBrightnessPolling() }
+        }
+    }
+
     private var defaultOutputDeviceID: AudioDeviceID = 0
     private var volumeTimer: Timer?
     private var brightnessTimer: Timer?
@@ -70,8 +82,9 @@ class SystemObserver: ObservableObject {
             
             AudioObjectAddPropertyListenerBlock(defaultOutputDeviceID, &propertyAddress, nil) { [weak self] _, _ in
                 DispatchQueue.main.async {
-                    self?.updateVolume()
-                    self?.showHUD()
+                    guard let self else { return }
+                    self.updateVolume()
+                    if !self.deferVolume { self.showHUD() }
                 }
             }
         }
@@ -122,11 +135,14 @@ class SystemObserver: ObservableObject {
     }
 
     // ── Luminosité ──────────────────────────────────────────────
+    // Suit la luminosité réglée ailleurs (Centre de contrôle, capteur) ; les touches, elles,
+    // affichent le HUD tout de suite. 2 lectures/s suffisent (avant : 8).
     private func startBrightnessPolling() {
-        guard getBrightness != nil else { return }
-        brightnessTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+        guard getBrightness != nil, !deferBrightness else { return }
+        brightnessTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.pollBrightness()
         }
+        brightnessTimer?.tolerance = 0.2
         pollBrightness(initial: true)
     }
 
@@ -157,6 +173,13 @@ class SystemObserver: ObservableObject {
             options: .defaultTap,
             eventsOfInterest: CGEventMask(mask),
             callback: { proxy, type, event, refcon in
+                // macOS coupe un tap trop lent ou désactivé par l'utilisateur : on le relance.
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    if let ref = refcon, let tap = Unmanaged<SystemObserver>.fromOpaque(ref).takeUnretainedValue().eventTap {
+                        CGEvent.tapEnable(tap: tap, enable: true)
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
                 if type.rawValue == 14 {
                     if let nsEvent = NSEvent(cgEvent: event), nsEvent.subtype.rawValue == 8 {
                         let data1 = nsEvent.data1
@@ -165,6 +188,13 @@ class SystemObserver: ObservableObject {
                         let keyDown = ((keyFlags & 0xFF00) >> 8) == 0x0A
                         
                         // 0=volUp, 1=volDown, 7=mute, 2=brightUp, 3=brightDown
+                        // Réglage confié à OsaWallpaper : la touche passe, c'est lui qui la traite.
+                        if let ref = refcon {
+                            let obs = Unmanaged<SystemObserver>.fromOpaque(ref).takeUnretainedValue()
+                            if ([0, 1, 7].contains(keyCode) && obs.deferVolume) || ([2, 3].contains(keyCode) && obs.deferBrightness) {
+                                return Unmanaged.passUnretained(event)
+                            }
+                        }
                         if [0,1,7,2,3].contains(keyCode) {
                             if keyDown, let ref = refcon {
                                 let obs = Unmanaged<SystemObserver>.fromOpaque(ref).takeUnretainedValue()
@@ -174,6 +204,7 @@ class SystemObserver: ObservableObject {
                                     else if keyCode == 7 { obs.setVolumeValue(obs.volume > 0 ? 0 : 0.1) }
                                     else if keyCode == 2 {
                                         obs.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
+                                        obs.syncBrightness()
                                         let nb = min(1, obs.brightness + 0.0625)
                                         obs.brightness = nb
                                         obs.showBrightnessHUDNow()
@@ -181,6 +212,7 @@ class SystemObserver: ObservableObject {
                                     }
                                     else if keyCode == 3 {
                                         obs.brightnessKeyUntil = Date().timeIntervalSinceReferenceDate + 0.9
+                                        obs.syncBrightness()
                                         let nb = max(0, obs.brightness - 0.0625)
                                         obs.brightness = nb
                                         obs.showBrightnessHUDNow()
@@ -204,6 +236,12 @@ class SystemObserver: ObservableObject {
         } else {
             print("WARNING: OsaNotch requires Accessibility permissions to swallow native OSD.")
         }
+    }
+
+    /// Valeur réelle avant un pas de touche (le sondage est lent, elle a pu bouger).
+    private func syncBrightness() {
+        var b: Float = 0
+        if let fn = getBrightness, fn(CGMainDisplayID(), &b) == 0, (0...1).contains(b) { brightness = b; lastBrightness = b }
     }
 
     private func showBrightnessHUDNow() {

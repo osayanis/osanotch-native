@@ -10,8 +10,9 @@ struct OsaCharacter: View {
     var size: CGFloat
     var wave: Bool = false     // la mascotte fait « coucou » de la main
 
+    // 30 images/s suffisent (au lieu de 120 sur un écran ProMotion).
     var body: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
             Canvas { ctx, cz in draw(&ctx, cz, tl.date.timeIntervalSinceReferenceDate) }
         }
         .frame(width: size, height: size)
@@ -33,8 +34,10 @@ struct OsaCharacter: View {
         // Regard
         var ex: CGFloat = 0, ey: CGFloat = 0
         if mood != .sleeping, let scr = NSScreen.main {
-            let dx = model.cursor.x - scr.frame.midX
-            let dyUp = model.cursor.y - scr.frame.maxY
+            // Lue à chaque image : le modèle ne republie plus la souris 30 fois par seconde.
+            let cursor = NSEvent.mouseLocation
+            let dx = cursor.x - scr.frame.midX
+            let dyUp = cursor.y - scr.frame.maxY
             let dist = max(1, hypot(dx, dyUp)); let k = min(1, dist / 440)
             let maxO = size * 0.07
             ex = (dx / dist) * maxO * k; ey = (-dyUp / dist) * maxO * k

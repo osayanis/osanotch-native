@@ -45,7 +45,7 @@ struct IslandView: View {
         if playing { return .dancing }
         return .idle
     }
-    var size: CGSize { Island.shapeSize(expanded: model.expanded, view: model.view, playing: playing, hud: model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD, notifBanner: model.showNotifBanner, notchW: model.notchW, notchH: model.notchH, vh: model.viewHeight, sw: model.screenW, theater: model.theater, theaterSize: model.theaterSize) }
+    var size: CGSize { model.shape }
 
     var body: some View {
         let exp = model.expanded
@@ -144,24 +144,79 @@ struct IslandView: View {
         }
     }
 
-    var hudActive: Bool { model.sysObs.showVolumeHUD || model.sysObs.showBrightnessHUD }
+    var hudActive: Bool { model.hudActive }
 
-    // Bannière de notification : apparaît sous l'encoche sans survol.
+    // Bannière de notification : apparaît sous l'encoche sans survol. Si le son ou la
+    // luminosité bougent en même temps, la barre se range dessous au lieu de la cacher.
     var notifBanner: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0).frame(height: model.notchH)
-            HStack(spacing: 11) {
-                OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 30)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Assistant IA").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                    Text(model.notification ?? "Tâche terminée").font(.system(size: 11)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+            if let n = model.notifications.first {
+                HStack(spacing: 11) {
+                    notifIcon(n, size: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            Text(n.title).font(.system(size: 12, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                            if n.count > 1 {
+                                Text("+\(n.count - 1)").font(.system(size: 9.5, weight: .bold)).foregroundColor(.black)
+                                    .padding(.horizontal, 5).padding(.vertical, 1).background(Capsule().fill(data.accent))
+                            }
+                        }
+                        Text(n.body).font(.system(size: 11)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer()
+                .padding(.horizontal, 16)
+                .frame(height: 52)
+                .contentShape(Rectangle())
+                .onTapGesture { model.open(n) }
+                .id(n.id)
+                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
             }
-            .padding(.horizontal, 16)
-            .frame(height: 52)
+            if hudActive { hudRow.frame(height: 28).transition(.move(edge: .top).combined(with: .opacity)) }
         }
-        .frame(width: 360, height: model.notchH + 52)
+        .frame(width: 360, height: size.height, alignment: .top)
+        .animation(.spring(response: 0.36, dampingFraction: 0.8), value: model.notifications.first?.id)
+        .animation(.spring(response: 0.36, dampingFraction: 0.8), value: hudActive)
+    }
+
+    /// Icône de l'appli d'origine (Messages, Mail, Huis clos) ; la mascotte pour l'IA.
+    @ViewBuilder func notifIcon(_ n: OsaNotif, size: CGFloat) -> some View {
+        if let id = n.bundleID, let icon = AppIcons.icon(id) {
+            Image(nsImage: icon).resizable().interpolation(.high).frame(width: size, height: size)
+        } else if n.source == .huisClos {
+            Image(systemName: "lock.fill").font(.system(size: size * 0.42, weight: .bold)).foregroundColor(.white)
+                .frame(width: size, height: size).background(RoundedRectangle(cornerRadius: size * 0.25).fill(Color(white: 0.18)))
+        } else {
+            OsaCharacter(model: model, mood: .happy, accent: data.accent, size: size)
+        }
+    }
+
+    /// Ligne d'une notification dans les listes (accueil, centre de notifications).
+    func notifRow(_ n: OsaNotif, titleSize: CGFloat) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            notifIcon(n, size: 18).padding(.top, 1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(n.count > 1 ? "\(n.title) · \(n.count)" : n.title).font(.system(size: titleSize, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                if n.source != .ai || n.body != n.title {
+                    Text(n.body).font(.system(size: titleSize - 1.5)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                }
+                Text(relTime(n.date)).font(.system(size: 9.5, weight: .medium)).foregroundColor(.white.opacity(0.35))
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { model.open(n) }
+    }
+
+    /// Sans « Accès complet au disque », Messages et Mail restent invisibles : bouton direct.
+    @ViewBuilder var accessHint: some View {
+        if model.feed.needsAccess {
+            Button { NSWorkspace.shared.open(NotificationFeed.settingsURL) } label: {
+                Label("Messages et Mail : autoriser", systemImage: "lock.open.fill")
+                    .font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
+            }.buttonStyle(.plain)
+        }
     }
 
     @ObservedObject var friendBridge = FriendBridge.shared
@@ -212,18 +267,10 @@ struct IslandView: View {
                 if model.notifications.isEmpty {
                     Text("Aucune activité").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
                 } else {
-                    ForEach(model.notifications.prefix(2)) { n in
-                        HStack(alignment: .top, spacing: 9) {
-                            Circle().fill(data.accent).frame(width: 6, height: 6).padding(.top, 5)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(n.text).font(.system(size: 12.5, weight: .bold)).foregroundColor(.white).lineLimit(1)
-                                Text(relTime(n.date)).font(.system(size: 9.5, weight: .medium)).foregroundColor(.white.opacity(0.35))
-                            }
-                            Spacer()
-                        }
-                    }
+                    ForEach(model.notifications.prefix(3)) { n in notifRow(n, titleSize: 12) }
                 }
                 Spacer(minLength: 0)
+                accessHint
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             
@@ -328,9 +375,12 @@ struct IslandView: View {
                 .padding(.horizontal, 7)
                 .frame(width: model.notchW + 56, height: model.notchH)
         }
-        else {
+        else if model.dropHover {
             HStack(spacing: 0) { Spacer(); OsaCharacter(model: model, mood: .idle, accent: data.accent, size: 28).offset(y: 5); Spacer() }
                 .frame(width: model.notchW, height: model.notchH)
+        } else {
+            // Notch au repos : l'île est invisible, inutile d'y animer la mascotte (30 images/s).
+            Color.clear.frame(width: model.notchW, height: model.notchH)
         }
     }
 
@@ -343,30 +393,33 @@ struct IslandView: View {
 
     // HUD volume / luminosité : pastille blanche qui descend sous l'encoche.
     var hudView: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0).frame(height: model.notchH)
+            hudRow.frame(height: 30)
+        }
+        .frame(width: model.notchW, height: model.notchH + 30)
+    }
+
+    var hudRow: some View {
         let isVol = model.sysObs.showVolumeHUD
         let value = CGFloat(isVol ? model.sysObs.volume : model.sysObs.brightness)
         let icon = isVol ? volumeIcon(model.sysObs.volume) : "sun.max.fill"
-        return VStack(spacing: 0) {
-            Spacer(minLength: 0).frame(height: model.notchH)
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 16)
-                    .contentTransition(.symbolEffect(.replace))
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.16))
-                        Capsule().fill(Color.white)
-                            .frame(width: max(5, g.size.width * value))
-                    }
+        return HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 16)
+                .contentTransition(.symbolEffect(.replace))
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.16))
+                    Capsule().fill(Color.white)
+                        .frame(width: max(5, g.size.width * value))
                 }
-                .frame(height: 5)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 30)
+            .frame(height: 5)
         }
-        .frame(width: model.notchW, height: model.notchH + 30)
+        .padding(.horizontal, 14)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.volume)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.sysObs.brightness)
     }
@@ -399,15 +452,7 @@ struct IslandView: View {
                     
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Dernières notifications").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
-                        ForEach(model.notifications.prefix(2)) { n in
-                            HStack(alignment: .top, spacing: 6) {
-                                Circle().fill(data.accent).frame(width: 5, height: 5).padding(.top, 4)
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(n.text).font(.system(size: 11, weight: .medium)).foregroundColor(.white).lineLimit(2)
-                                    Text(relTime(n.date)).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
-                                }
-                            }
-                        }
+                        ForEach(model.notifications.prefix(2)) { n in notifRow(n, titleSize: 11) }
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)

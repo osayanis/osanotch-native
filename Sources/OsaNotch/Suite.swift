@@ -10,12 +10,15 @@ import Combine
 //   fr.kinam.HuisClos.nonLus   Huis clos → nombre (Int) de messages non lus, à chaque changement,
 //                              même verrouillé ; jamais le nom ni le texte
 //   fr.kinam.HuisClos.demande  notch → Huis clos : « redis-moi où on en est » (au lancement)
+//   fr.kinam.HuisClos.poke     Huis clos → un poke reçu (façon TeamSpeak), « de » = nom de la
+//                              conversation chez l'autre (peut être vide) ; même verrouillé
 enum Suite {
     static let hello = Notification.Name("com.osalabs.suite.hello")
     static let wallpaper = Notification.Name("com.osalabs.suite.wallpaper")
     static let notch = Notification.Name("com.osalabs.suite.notch")
     static let huisClosUnread = Notification.Name("fr.kinam.HuisClos.nonLus")
     static let huisClosAsk = Notification.Name("fr.kinam.HuisClos.demande")
+    static let huisClosPoke = Notification.Name("fr.kinam.HuisClos.poke")
     static let huisClosID = "fr.kinam.HuisClos"
     static let wallpaperID = "com.osalabs.osawallpaper"
 
@@ -31,6 +34,8 @@ final class SuiteLink: ObservableObject {
     @Published private(set) var wallpaperBrightness = false
     /// Nombre de messages non lus annoncé par Huis clos (0 = tout est lu, ou appli quittée).
     var onHuisClos: ((Int) -> Void)?
+    /// Un poke envoyé depuis Huis clos : le nom de qui le fait (ou vide).
+    var onHuisClosPoke: ((String) -> Void)?
 
     private var lastBottom: CGFloat = -1
     private var display: CGDirectDisplayID = 0
@@ -49,6 +54,9 @@ final class SuiteLink: ObservableObject {
         tokens.append(dc.addObserver(forName: Suite.huisClosUnread, object: nil, queue: .main) { [weak self] n in
             guard let count = (n.userInfo?["nombre"] as? NSNumber)?.intValue else { return }
             self?.onHuisClos?(max(0, count))
+        })
+        tokens.append(dc.addObserver(forName: Suite.huisClosPoke, object: nil, queue: .main) { [weak self] n in
+            self?.onHuisClosPoke?((n.userInfo?["de"] as? String) ?? "")
         })
         tokens.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] n in
             switch (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier {

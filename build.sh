@@ -42,6 +42,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Version de l'app = celle du code (AutoUpdater.currentVersion, bumpée par publish.sh) :
+# sans ça l'Info.plist disait 0.1 et le Finder comme OsaHUB voyaient une vieille version.
+VERSION="$(sed -n 's/.*private let currentVersion = "\(.*\)".*/\1/p' Sources/OsaNotch/AutoUpdater.swift)"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION:-0.1}" -c "Set :CFBundleVersion ${VERSION:-1}" "$APP/Contents/Info.plist"
+
 echo "▶︎ signature avec certificat développeur (évite les redemandes de permissions)…"
 # SIGN_ID peut être forcé ; sinon 1er certificat « Apple Development » du trousseau,
 # et à défaut signature ad-hoc (« - ») pour que n'importe qui puisse compiler.

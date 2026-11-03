@@ -2,8 +2,10 @@
 # Publie une nouvelle version d'OsaNotch :
 #  - bump la version dans AutoUpdater.swift
 #  - build + zip (ditto)
-#  - déploie le canal de MAJ sur le VPS (OsaNotch.zip + latest.json) → notch.osalabs.fr
-#  - commit/push + release GitHub
+#  - commit/push + release GitHub (OsaNotch.zip dedans) : c'est là que les applis
+#    (≥ 1.0.4) cherchent leurs mises à jour (AutoUpdater.swift)
+#  - VPS (OsaNotch.zip + latest.json, notch.osalabs.fr) : seulement pour les anciennes
+#    versions (≤ 1.0.3), qui lisent encore latest.json ; et le .dmg du site
 set -euo pipefail
 cd "$(dirname "$0")"
 

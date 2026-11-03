@@ -8,7 +8,7 @@ import EventKit
 enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding }
 
 struct OsaNotif: Identifiable, Equatable {
-    enum Source { case ai, messages, mail, huisClos }
+    enum Source { case ai, messages, mail, huisClos, huisClosPoke }
     let id = UUID()
     let source: Source
     let title: String
@@ -22,7 +22,7 @@ struct OsaNotif: Identifiable, Equatable {
         case .ai: return nil
         case .messages: return "com.apple.MobileSMS"
         case .mail: return "com.apple.mail"
-        case .huisClos: return "fr.kinam.HuisClos"
+        case .huisClos, .huisClosPoke: return "fr.kinam.HuisClos"
         }
     }
     var text: String { body.isEmpty ? title : body }
@@ -94,13 +94,14 @@ final class AppModel: ObservableObject {
         feed.onNotif = { [weak self] n in self?.push(n) }
         feed.start()
         suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
+        suite.onHuisClosPoke = { [weak self] de in self?.pokeHuisClos(de) }
         // OsaWallpaper s'occupe du son / de la luminosité : le notch n'affiche plus les siens.
         suite.$wallpaperVolume.removeDuplicates().sink { [weak self] on in self?.sysObs.deferVolume = on }.store(in: &suiteSinks)
         suite.$wallpaperBrightness.removeDuplicates().sink { [weak self] on in self?.sysObs.deferBrightness = on }.store(in: &suiteSinks)
         feed.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &suiteSinks)
         clipboard.start()
         
-        AutoUpdater.shared.checkForUpdates()
+        AutoUpdater.shared.start()
     }
 
     /// Assistant IA (Claude Code, API locale) : texte seul.
@@ -154,6 +155,29 @@ final class AppModel: ObservableObject {
             // Une partie lue : on corrige le nombre, sans bannière
             let n = notifications[i]
             notifications[i] = OsaNotif(source: .huisClos, title: n.title, body: body, date: n.date)
+        }
+    }
+
+    /// Un poke depuis Huis clos (façon TeamSpeak) : bannière tout de suite, même si la personne est
+    /// dans Huis clos, et un petit son. Titre à part pour ne pas être regroupé avec les non lus.
+    func pokeHuisClos(_ de: String) {
+        // N'importe quelle appli peut poster cette notification : nom borné
+        let qui = String(de.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        NSSound(named: "Ping")?.play()
+        // Source à part : le compteur des non lus (setHuisClos) ne touche pas aux pokes
+        let n = OsaNotif(source: .huisClosPoke, title: "Poke", body: "\(qui.isEmpty ? "Quelqu'un" : qui) te poke 👋")
+        notifications.removeAll { $0.source == .huisClosPoke }
+        notifications.insert(n, at: 0)
+        if notifications.count > 12 { notifications.removeLast(notifications.count - 12) }
+        notification = n.text
+        // Notch ouvert sur un outil (OsaDrop, OsaCast…) : le son et la liste, sans couper ce qu'on fait
+        if expanded && view != .home && view != .notification { return }
+        view = .notification
+        bannerSource = n.source
+        showNotifBanner = true
+        bannerTimer?.invalidate()
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
+            self?.showNotifBanner = false
         }
     }
 

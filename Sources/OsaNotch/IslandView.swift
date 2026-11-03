@@ -185,7 +185,7 @@ struct IslandView: View {
     @ViewBuilder func notifIcon(_ n: OsaNotif, size: CGFloat) -> some View {
         if let id = n.bundleID, let icon = AppIcons.icon(id) {
             Image(nsImage: icon).resizable().interpolation(.high).frame(width: size, height: size)
-        } else if n.source == .huisClos {
+        } else if n.source == .huisClos || n.source == .huisClosPoke {
             Image(systemName: "lock.fill").font(.system(size: size * 0.42, weight: .bold)).foregroundColor(.white)
                 .frame(width: size, height: size).background(RoundedRectangle(cornerRadius: size * 0.25).fill(Color(white: 0.18)))
         } else {

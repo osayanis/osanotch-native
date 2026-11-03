@@ -101,7 +101,7 @@ final class AppModel: ObservableObject {
         feed.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &suiteSinks)
         clipboard.start()
         
-        AutoUpdater.shared.checkForUpdates()
+        AutoUpdater.shared.start()
     }
 
     /// Assistant IA (Claude Code, API locale) : texte seul.
@@ -161,7 +161,8 @@ final class AppModel: ObservableObject {
     /// Un poke depuis Huis clos (façon TeamSpeak) : bannière tout de suite, même si la personne est
     /// dans Huis clos, et un petit son. Titre à part pour ne pas être regroupé avec les non lus.
     func pokeHuisClos(_ de: String) {
-        let qui = de.trimmingCharacters(in: .whitespaces)
+        // N'importe quelle appli peut poster cette notification : nom borné
+        let qui = String(de.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
         NSSound(named: "Ping")?.play()
         // Source à part : le compteur des non lus (setHuisClos) ne touche pas aux pokes
         let n = OsaNotif(source: .huisClosPoke, title: "Poke", body: "\(qui.isEmpty ? "Quelqu'un" : qui) te poke 👋")

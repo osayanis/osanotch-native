@@ -12,6 +12,7 @@ struct TabBarView: View {
             tbButton("house.fill", .home)
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
+            tbButton("bell.fill", .notification)
             Spacer()
             // Groupe de droite resserré : il se tasse vers le bord et s'éloigne de l'encoche.
             HStack(spacing: 8) {
@@ -34,52 +35,44 @@ struct TabBarView: View {
     }
 }
 
-// Petite batterie avec un visage : contente quand chargée, inquiète quand faible.
+// Petite batterie avec le pourcentage dedans, comme sur l'iPhone : le chiffre est sombre sur la
+// partie remplie et clair sur la partie vide (deux calques, le sombre découpé à la largeur du plein).
 struct BatteryGlyph: View {
     var percent: Int
     var charging: Bool
 
+    private let w: CGFloat = 27, h: CGFloat = 13
     private var frac: CGFloat { max(0, min(1, CGFloat(percent) / 100)) }
     private var color: Color {
-        if percent <= 15 && !charging { return .red }
+        if charging { return Color(red: 0.30, green: 0.85, blue: 0.39) }
+        if percent <= 15 { return .red }
         return .white
     }
 
     var body: some View {
         HStack(spacing: 1) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).strokeBorder(.white.opacity(0.4), lineWidth: 0.9).frame(width: 21, height: 11)
-                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: max(3, 19 * frac), height: 9).padding(.leading, 1)
-                if charging {
-                    Image(systemName: "bolt.fill").font(.system(size: 6.5, weight: .bold)).foregroundColor(.black.opacity(0.75)).frame(width: 21)
-                } else {
-                    face.frame(width: 21, height: 11)
+                RoundedRectangle(cornerRadius: 3.5).strokeBorder(.white.opacity(0.4), lineWidth: 0.9)
+                label(.white.opacity(0.9))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 2.5).fill(color).padding(1.2)
+                    label(.black.opacity(0.82))
                 }
+                .mask(alignment: .leading) { Rectangle().frame(width: 1.2 + (w - 2.4) * frac) }
             }
-            RoundedRectangle(cornerRadius: 1).fill(.white.opacity(0.4)).frame(width: 1.6, height: 4)
+            .frame(width: w, height: h)
+            RoundedRectangle(cornerRadius: 1).fill(.white.opacity(0.4)).frame(width: 1.6, height: 4.5)
         }
+        .accessibilityElement()
+        .accessibilityLabel("Batterie \(percent) %\(charging ? ", en charge" : "")")
     }
 
-    // Visage : yeux + bouche qui sourit (plein), reste neutre (moyen) ou boude (faible).
-    var face: some View {
-        let ink = Color.black.opacity(0.72)
-        return VStack(spacing: 1) {
-            HStack(spacing: 2.4) {
-                Circle().fill(ink).frame(width: 1.5, height: 1.5)
-                Circle().fill(ink).frame(width: 1.5, height: 1.5)
-            }
-            Mouth(smile: percent > 45 ? 1 : (percent > 20 ? 0 : -1)).stroke(ink, style: StrokeStyle(lineWidth: 0.9, lineCap: .round)).frame(width: 5.5, height: 2.4)
+    private func label(_ ink: Color) -> some View {
+        HStack(spacing: 0.5) {
+            if charging { Image(systemName: "bolt.fill").font(.system(size: 6.5, weight: .heavy)) }
+            Text("\(percent)").font(.system(size: percent >= 100 ? 8 : 9, weight: .bold, design: .rounded)).monospacedDigit()
         }
-    }
-}
-
-struct Mouth: Shape {
-    var smile: CGFloat   // 1 = sourire, 0 = neutre, -1 = moue
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.midY))
-        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.midY),
-                       control: CGPoint(x: r.midX, y: r.midY + smile * r.height * 0.9))
-        return p
+        .foregroundColor(ink)
+        .frame(width: w, height: h)
     }
 }

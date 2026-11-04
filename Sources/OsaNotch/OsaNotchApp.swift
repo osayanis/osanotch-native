@@ -92,6 +92,8 @@ final class AppModel: ObservableObject {
         aiTracker.start()
         // Messages et Mail (Centre de notifications) ; Huis clos annonce lui-même son nombre de non lus
         feed.onNotif = { [weak self] n in self?.push(n) }
+        // Amis : demande reçue, acceptée, invitation OsaCast / OsaParty → bannière
+        friendBridge.onNotice = { [weak self] text in self?.push(OsaNotif(source: .ai, title: "Amis", body: text)) }
         feed.start()
         suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
         suite.onHuisClosPoke = { [weak self] de in self?.pokeHuisClos(de) }
@@ -179,6 +181,19 @@ final class AppModel: ObservableObject {
         bannerTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
             self?.showNotifBanner = false
         }
+    }
+
+    /// Efface une notification de la liste (et sa bannière si elle est affichée).
+    func dismiss(_ n: OsaNotif) {
+        if notifications.first?.id == n.id && showNotifBanner { showNotifBanner = false }
+        notifications.removeAll { $0.id == n.id }
+    }
+
+    /// Efface toutes les notifications. La pastille Huis clos, elle, reste jusqu'à la lecture.
+    func clearNotifications() {
+        showNotifBanner = false
+        bannerTimer?.invalidate()
+        notifications.removeAll()
     }
 
     /// Clic sur une notification : ouvre l'appli d'origine.

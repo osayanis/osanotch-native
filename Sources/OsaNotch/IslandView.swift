@@ -205,9 +205,139 @@ struct IslandView: View {
                 Text(relTime(n.date)).font(.system(size: 9.5, weight: .medium)).foregroundColor(.white.opacity(0.35))
             }
             Spacer(minLength: 0)
+            DismissButton { withAnimation(.easeOut(duration: 0.2)) { model.dismiss(n) } }
         }
         .contentShape(Rectangle())
         .onTapGesture { model.open(n) }
+        .transition(.opacity.combined(with: .move(edge: .trailing)))
+    }
+
+    /// « Dernières notifications » + « Tout effacer ».
+    func notifHeader(size: CGFloat) -> some View {
+        HStack {
+            Text("Dernières notifications").font(.system(size: size, weight: .bold)).foregroundColor(.white.opacity(0.45))
+            Spacer(minLength: 4)
+            if !model.notifications.isEmpty {
+                Button { withAnimation(.easeOut(duration: 0.2)) { model.clearNotifications() } } label: {
+                    Text("Tout effacer").font(.system(size: size - 1, weight: .semibold)).foregroundColor(.white.opacity(0.5))
+                }.buttonStyle(.plain).help("Effacer toutes les notifications")
+            }
+        }
+    }
+
+    /// Section Amis (accueil et centre de notifications) : ton nom et ton code, les demandes et
+    /// invitations reçues, l'ajout par code, et la liste avec les invitations OsaParty / OsaCast.
+    func friendsPanel(compact: Bool) -> some View {
+        let fs: CGFloat = compact ? 9 : 10
+        return VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+            HStack(spacing: 4) {
+                Text("Amis").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
+                if !friendBridge.myName.isEmpty {
+                    Circle().fill(friendBridge.online ? Color.green : Color.white.opacity(0.25)).frame(width: 5, height: 5)
+                        .help(friendBridge.online ? "Connecté" : "Hors ligne : reconnexion…")
+                }
+                Spacer()
+                if !friendBridge.myName.isEmpty {
+                    Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.35))
+                        .textSelection(.enabled).help("Ton code ami : donne-le à tes amis")
+                }
+            }
+            if friendBridge.myName.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Ton nom...", text: $friendCodeInput)
+                        .textFieldStyle(.plain).font(.system(size: 11))
+                        .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                        .onSubmit { saveFriendName() }
+                    Button("Configurer") { saveFriendName() }
+                        .buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
+                }
+            } else if let req = friendBridge.incomingRequests.first {
+                invitation("\(req.name) veut être ton ami", ok: "Accepter", fs: fs,
+                           yes: { friendBridge.accept(req) }, no: { friendBridge.decline(req) })
+            } else if let req = friendBridge.incomingCast.first {
+                invitation("\(req.friendName) partage son écran", ok: "Regarder", fs: fs, yes: {
+                    model.castBridge.join(req.castCode)
+                    model.view = .cast
+                    friendBridge.incomingCast.removeFirst()
+                }, no: { friendBridge.incomingCast.removeFirst() })
+            } else if let req = friendBridge.incomingParty.first {
+                invitation("\(req.friendName) lance une OsaParty", ok: "Écouter", fs: fs, yes: {
+                    model.partyBridge.join(req.partyCode)
+                    model.view = .party
+                    friendBridge.incomingParty.removeFirst()
+                }, no: { friendBridge.incomingParty.removeFirst() })
+            } else {
+                HStack(spacing: 4) {
+                    TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
+                        .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
+                        .onSubmit { addFriendCode() }
+                    Button { addFriendCode() } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }
+                        .buttonStyle(.plain).help("Envoyer une demande d'ami")
+                }
+                if let st = friendBridge.status {
+                    Text(st).font(.system(size: fs)).foregroundColor(.white.opacity(0.6)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+                        if friendBridge.friends.isEmpty && friendBridge.status == nil {
+                            Text("Entre le code d'un ami pour l'ajouter.").font(.system(size: fs)).foregroundColor(.white.opacity(0.35))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        ForEach(friendBridge.friends, id: \.code) { f in
+                            HStack {
+                                Text(f.name).font(.system(size: 11)).foregroundColor(.white).lineLimit(1)
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    Button {
+                                        model.partyBridge.host()
+                                        model.view = .party
+                                        whenReady({ model.partyBridge.code }) { friendBridge.sendPartyRequest(to: f.code, partyCode: $0) }
+                                    } label: { Image(systemName: "music.note").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }
+                                        .buttonStyle(.plain).help("Inviter à une OsaParty")
+                                    Button {
+                                        model.castBridge.host()
+                                        model.view = .cast
+                                        whenReady({ model.castBridge.code }) { friendBridge.sendCastRequest(to: f.code, castCode: $0) }
+                                    } label: { Image(systemName: "play.display").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }
+                                        .buttonStyle(.plain).help("Partager ton écran avec cet ami")
+                                }
+                            }
+                            .contextMenu { Button("Retirer \(f.name)", role: .destructive) { friendBridge.removeFriend(f) } }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: compact ? 120 : 130, alignment: .topLeading)
+    }
+
+    private func invitation(_ text: String, ok: String, fs: CGFloat, yes: @escaping () -> Void, no: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(text).font(.system(size: fs)).foregroundColor(.white).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button(ok, action: yes).buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: fs, weight: .bold))
+                Button("Refuser", action: no).buttonStyle(.plain).foregroundColor(.white.opacity(0.5)).font(.system(size: fs, weight: .bold))
+            }
+        }.padding(5).background(Color.white.opacity(0.1)).cornerRadius(5)
+    }
+
+    private func saveFriendName() {
+        let n = friendCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return }
+        friendBridge.saveName(n); friendCodeInput = ""
+    }
+
+    private func addFriendCode() {
+        guard !friendCodeInput.isEmpty else { return }
+        friendBridge.sendFriendRequest(to: friendCodeInput); friendCodeInput = ""
+    }
+
+    /// Attend qu'un code de salon (OsaCast, OsaParty) soit attribué par le serveur, 10 s au plus.
+    private func whenReady(_ code: @escaping () -> String, tries: Int = 20, _ go: @escaping (String) -> Void) {
+        let c = code()
+        if !c.isEmpty { return go(c) }
+        guard tries > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { whenReady(code, tries: tries - 1, go) }
     }
 
     /// Sans « Accès complet au disque », Messages et Mail restent invisibles : bouton direct.
@@ -258,15 +388,17 @@ struct IslandView: View {
         HStack(spacing: 16) {
             VStack {
                 OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 58)
-                Text("OsaLabs").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.6))
+                Button { model.view = .home } label: {
+                    Label("Accueil", systemImage: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.6))
+                }.buttonStyle(.plain).help("Revenir à l'accueil")
             }
             .frame(width: 90)
             .transition(.move(edge: .leading).combined(with: .opacity))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Dernières notifications").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
+                notifHeader(size: 11)
                 if model.notifications.isEmpty {
-                    Text("Aucune activité").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
+                    Text("Aucune notification").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
                 } else {
                     ForEach(model.notifications.prefix(3)) { n in notifRow(n, titleSize: 12) }
                 }
@@ -275,88 +407,7 @@ struct IslandView: View {
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             
-            // Section Amis
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Amis").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
-                    Spacer()
-                    if !friendBridge.myName.isEmpty {
-                        Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.3))
-                    }
-                }
-                
-                if friendBridge.myName.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Ton nom...", text: $friendCodeInput)
-                            .textFieldStyle(.plain).font(.system(size: 11))
-                            .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                        Button("Configurer") {
-                            if !friendCodeInput.isEmpty { friendBridge.saveName(friendCodeInput); friendCodeInput = "" }
-                        }.buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
-                    }
-                } else {
-                    if !friendBridge.incomingRequests.isEmpty {
-                        let req = friendBridge.incomingRequests[0]
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(req.name) souhaite devenir ami").font(.system(size: 10)).foregroundColor(.white).lineLimit(2)
-                            HStack {
-                                Button("Accepter") {
-                                    friendBridge.addFriend(FriendBridge.Friend(name: req.name, code: req.code))
-                                    friendBridge.incomingRequests.removeFirst()
-                                }.buttonStyle(.plain).foregroundColor(.green).font(.system(size: 10, weight: .bold))
-                                Button("Refuser") {
-                                    friendBridge.incomingRequests.removeFirst()
-                                }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 10, weight: .bold))
-                            }
-                        }.padding(6).background(Color.white.opacity(0.1)).cornerRadius(6)
-                    } else if !friendBridge.incomingCast.isEmpty {
-                        let req = friendBridge.incomingCast[0]
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(req.friendName) veut cast").font(.system(size: 10)).foregroundColor(.white).lineLimit(2)
-                            HStack {
-                                Button("Rejoindre") {
-                                    model.castBridge.join(req.castCode)
-                                    model.view = .cast
-                                    friendBridge.incomingCast.removeFirst()
-                                }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 10, weight: .bold))
-                                Button("Refuser") {
-                                    friendBridge.incomingCast.removeFirst()
-                                }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 10, weight: .bold))
-                            }
-                        }.padding(6).background(Color.white.opacity(0.1)).cornerRadius(6)
-                    } else {
-                        HStack(spacing: 4) {
-                            TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
-                                .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                            Button {
-                                if !friendCodeInput.isEmpty { friendBridge.sendFriendRequest(to: friendCodeInput); friendCodeInput = "" }
-                            } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }.buttonStyle(.plain)
-                        }
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(friendBridge.friends, id: \.code) { f in
-                                    HStack {
-                                        Text(f.name).font(.system(size: 11)).foregroundColor(.white)
-                                        Spacer()
-                                        Button {
-                                            // Lancer une demande de Cast
-                                            model.castBridge.host()
-                                            model.view = .cast
-                                            // On attend que le code soit généré
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                                if !model.castBridge.code.isEmpty {
-                                                    friendBridge.sendCastRequest(to: f.code, castCode: model.castBridge.code)
-                                                }
-                                            }
-                                        } label: { Image(systemName: "play.display").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(width: 130, alignment: .topLeading)
+            friendsPanel(compact: false)
         }
         .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 14)
     }
@@ -462,7 +513,7 @@ struct IslandView: View {
     // Accueil au repos : mascotte + raccourcis (et notifications si présentes).
     var idleHome: some View {
         VStack(spacing: 0) {
-            if !model.notifications.isEmpty && !model.dropHover {
+            if (!model.notifications.isEmpty || friendBridge.hasIncoming) && !model.dropHover {
                 HStack(spacing: 16) {
                     VStack(spacing: -2) {
                         OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54, wave: waving)
@@ -472,119 +523,13 @@ struct IslandView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Dernières notifications").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                        notifHeader(size: 11)
                         ForEach(model.notifications.prefix(2)) { n in notifRow(n, titleSize: 11) }
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     
-                    // Section Amis
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Amis").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.45))
-                            Spacer()
-                            if !friendBridge.myName.isEmpty {
-                                Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.3))
-                            }
-                        }
-                        
-                        if friendBridge.myName.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                TextField("Ton nom...", text: $friendCodeInput)
-                                    .textFieldStyle(.plain).font(.system(size: 11))
-                                    .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                                Button("Configurer") {
-                                    if !friendCodeInput.isEmpty { friendBridge.saveName(friendCodeInput); friendCodeInput = "" }
-                                }.buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
-                            }
-                        } else {
-                            if !friendBridge.incomingRequests.isEmpty {
-                                let req = friendBridge.incomingRequests[0]
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(req.name) souhaite devenir ami").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
-                                    HStack {
-                                        Button("Accepter") {
-                                            friendBridge.addFriend(FriendBridge.Friend(name: req.name, code: req.code))
-                                            friendBridge.incomingRequests.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(.green).font(.system(size: 9, weight: .bold))
-                                        Button("Refuser") {
-                                            friendBridge.incomingRequests.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
-                                    }
-                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                            } else if !friendBridge.incomingCast.isEmpty {
-                                let req = friendBridge.incomingCast[0]
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(req.friendName) veut cast").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
-                                    HStack {
-                                        Button("Rejoindre") {
-                                            model.castBridge.join(req.castCode)
-                                            model.view = .cast
-                                            friendBridge.incomingCast.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 9, weight: .bold))
-                                        Button("Refuser") {
-                                            friendBridge.incomingCast.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
-                                    }
-                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                            } else if !friendBridge.incomingParty.isEmpty {
-                                let req = friendBridge.incomingParty[0]
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(req.friendName) lance une Party").font(.system(size: 9)).foregroundColor(.white).lineLimit(2)
-                                    HStack {
-                                        Button("Écouter") {
-                                            model.partyBridge.join(req.partyCode)
-                                            model.view = .party
-                                            friendBridge.incomingParty.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(data.accent).font(.system(size: 9, weight: .bold))
-                                        Button("Refuser") {
-                                            friendBridge.incomingParty.removeFirst()
-                                        }.buttonStyle(.plain).foregroundColor(.red).font(.system(size: 9, weight: .bold))
-                                    }
-                                }.padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                            } else {
-                                HStack(spacing: 4) {
-                                    TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
-                                        .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
-                                    Button {
-                                        if !friendCodeInput.isEmpty { friendBridge.sendFriendRequest(to: friendCodeInput); friendCodeInput = "" }
-                                    } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }.buttonStyle(.plain)
-                                }
-                                ScrollView(.vertical, showsIndicators: false) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        ForEach(friendBridge.friends, id: \.code) { f in
-                                            HStack {
-                                                Text(f.name).font(.system(size: 11)).foregroundColor(.white)
-                                                Spacer()
-                                                HStack(spacing: 8) {
-                                                    Button {
-                                                        model.partyBridge.host()
-                                                        model.view = .party
-                                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                                            if !model.partyBridge.code.isEmpty {
-                                                                friendBridge.sendPartyRequest(to: f.code, partyCode: model.partyBridge.code)
-                                                            }
-                                                        }
-                                                    } label: { Image(systemName: "music.note").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
-                                                    
-                                                    Button {
-                                                        model.castBridge.host()
-                                                        model.view = .cast
-                                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                                            if !model.castBridge.code.isEmpty {
-                                                                friendBridge.sendCastRequest(to: f.code, castCode: model.castBridge.code)
-                                                            }
-                                                        }
-                                                    } label: { Image(systemName: "play.display").font(.system(size: 10)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(width: 120, alignment: .topLeading)
+                    friendsPanel(compact: true)
                 }
                 .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 4)
             } else {
@@ -752,5 +697,22 @@ struct IslandView: View {
             }
         }
         return true
+    }
+}
+
+/// Petit × pour effacer une notification : discret, plus visible au survol.
+struct DismissButton: View {
+    var action: () -> Void
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                .foregroundColor(.white.opacity(hover ? 0.9 : 0.35))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(.white.opacity(hover ? 0.16 : 0.06)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .help("Effacer")
     }
 }

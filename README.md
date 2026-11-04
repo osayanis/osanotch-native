@@ -12,6 +12,10 @@
 &nbsp;
 <a href="https://github.com/osayanis/osanotch-native/releases/latest"><img src="https://img.shields.io/github/v/release/osayanis/osanotch-native?style=for-the-badge&label=version&color=a78bfa&labelColor=1a1a1a" alt="Dernière version" /></a>
 
+<br />
+
+<sub><a href="https://github.com/osayanis/osahub/releases/latest/download/OsaHUB.dmg"><b>Installer avec OsaHUB</b></a> · l'app qui installe et met à jour toute la suite Osa</sub>
+
 <img src="https://img.shields.io/badge/macOS-14%2B-white?style=flat-square&logo=apple&labelColor=1a1a1a" alt="macOS 14+" />
 <img src="https://img.shields.io/badge/Apple_Silicon-natif-white?style=flat-square&labelColor=1a1a1a" alt="Apple Silicon" />
 <img src="https://img.shields.io/badge/Swift-SwiftUI_+_AppKit-F05138?style=flat-square&logo=swift&logoColor=white&labelColor=1a1a1a" alt="Swift" />
@@ -78,6 +82,8 @@ Le notch embarque les moteurs WebRTC des apps web OsaLabs : **tout est interopé
 <br />
 
 ## 📦 Installation
+
+> **Ou avec [OsaHUB](https://github.com/osayanis/osahub/releases/latest/download/OsaHUB.dmg)** : il installe OsaNotch en un clic, avec le reste de la suite Osa, et le garde à jour.
 
 1. Télécharge **[OsaNotch.dmg](https://notch.osalabs.fr)**.
 2. Ouvre-le et **glisse l'icône OsaNotch sur le dossier Applications**.

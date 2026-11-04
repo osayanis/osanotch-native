@@ -513,7 +513,7 @@ struct IslandView: View {
     // Accueil au repos : mascotte + raccourcis (et notifications si présentes).
     var idleHome: some View {
         VStack(spacing: 0) {
-            if (!model.notifications.isEmpty || friendBridge.hasIncoming) && !model.dropHover {
+            if !model.dropHover {
                 HStack(spacing: 16) {
                     VStack(spacing: -2) {
                         OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54, wave: waving)
@@ -524,6 +524,9 @@ struct IslandView: View {
                     
                     VStack(alignment: .leading, spacing: 6) {
                         notifHeader(size: 11)
+                        if model.notifications.isEmpty {
+                            Text("Aucune notification").font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
+                        }
                         ForEach(model.notifications.prefix(2)) { n in notifRow(n, titleSize: 11) }
                         Spacer(minLength: 0)
                     }

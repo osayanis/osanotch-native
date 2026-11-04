@@ -12,7 +12,6 @@ struct TabBarView: View {
             tbButton("house.fill", .home)
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
-            tbButton("bell.fill", .notification)
             Spacer()
             // Groupe de droite resserré : il se tasse vers le bord et s'éloigne de l'encoche.
             HStack(spacing: 8) {

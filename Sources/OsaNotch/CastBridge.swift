@@ -7,6 +7,8 @@ final class CastBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
     enum Phase: Equatable { case idle, loading, waiting, connecting, connected, live, reconnecting, error }
     @Published var phase: Phase = .loading
     @Published var code: String = ""
+    /// Pourquoi la diffusion n'a pas démarré (affiché dans la boîte Diffuser).
+    @Published var errorText: String?
 
     let webView: WKWebView
     private var ready = false
@@ -28,9 +30,32 @@ final class CastBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
     private func load() { ready = false; webView.load(URLRequest(url: URL(string: "https://osacast.osalabs.fr/osanotch-cast-bridge.html")!)) }
 
     // La page-pont gère tout : capture, session, et reconnexion après une coupure (même code).
-    func host() { set(.waiting); run { self.webView.evaluateJavaScript("osaCast.host()", completionHandler: nil) } }
+    /// Diffuser : WebKit refuse la capture d'écran à une page qui n'a pas le focus (erreur muette,
+    /// pas de salon). On donne donc le focus à la page, on attend qu'il y soit arrivé, puis on capture.
+    func host() {
+        errorText = nil
+        set(.waiting)
+        // Sans « Enregistrement de l'écran », WebKit échoue sans rien montrer : macOS demande ici.
+        if !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
+        run { self.focusThenCapture(tries: 60) }
+    }
+
+    private func focusThenCapture(tries: Int) {
+        if let w = webView.window {
+            w.makeKeyAndOrderFront(nil)
+            if w.firstResponder !== webView { w.makeFirstResponder(webView) }
+        }
+        webView.evaluateJavaScript("document.hasFocus() && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)") { [weak self] r, _ in
+            guard let self else { return }
+            if (r as? Bool) == true || tries <= 0 {
+                self.webView.evaluateJavaScript("osaCast.host()", completionHandler: nil)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.focusThenCapture(tries: tries - 1) }
+            }
+        }
+    }
     func join(_ code: String) { set(.connecting); run { self.webView.evaluateJavaScript("osaCast.join(\(Self.js(code)))", completionHandler: nil) } }
-    func stop() { webView.evaluateJavaScript("osaCast.stop()", completionHandler: nil); DispatchQueue.main.async { self.code = "" }; set(.idle); load() }
+    func stop() { webView.evaluateJavaScript("osaCast.stop()", completionHandler: nil); DispatchQueue.main.async { self.code = ""; self.errorText = nil }; set(.idle); load() }
     // Relance la lecture après un repli/dépli du notch (le WebView détaché peut mettre la vidéo en pause)
     func resume() { webView.evaluateJavaScript("(function(){var v=document.getElementById('v'); if(v){v.muted=true; v.play().catch(function(){});}})()", completionHandler: nil) }
 
@@ -55,7 +80,14 @@ final class CastBridge: NSObject, ObservableObject, WKScriptMessageHandler, WKNa
                 case "reconnecting": self.phase = .reconnecting
                 default: break
                 }
-            case "error": self.phase = .error
+            case "error":
+                self.phase = .error
+                let msg = d["msg"] as? String ?? "erreur"
+                if msg.contains("capture") {
+                    self.errorText = CGPreflightScreenCaptureAccess()
+                        ? "Capture refusée (\(d["detail"] as? String ?? msg))"
+                        : "Autorise OsaNotch dans Réglages › Confidentialité › Enregistrement de l'écran"
+                } else { self.errorText = msg }
             default: break
             }
         }

@@ -22,7 +22,6 @@ struct TabBarView: View {
                     BatteryGlyph(percent: b.percent, charging: b.charging)
                         .padding(.leading, 4)
                 }
-                OsaCharacter(model: model, mood: .idle, accent: accent, size: 16)
             }
         }.padding(.leading, 18).padding(.trailing, 14).padding(.top, 11)
     }

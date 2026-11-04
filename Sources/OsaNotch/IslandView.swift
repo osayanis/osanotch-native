@@ -59,7 +59,7 @@ struct IslandView: View {
                 bridgesLayer // ponts OsaDrop / OsaParty : idem, invisibles
                 if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
             }
-            .opacity(!exp && !hudActive && !playing && model.huisClosUnread == 0 && !model.showNotifBanner && !model.dropHover ? 0 : 1)
+            .opacity(!exp && !hudActive && !playing && model.huisClosBadge == 0 && !model.showNotifBanner && !model.dropHover ? 0 : 1)
             .frame(width: size.width, height: size.height)
             .clipShape(IslandShape(bottom: exp ? 28 : 12))
             Spacer(minLength: 0)
@@ -71,9 +71,10 @@ struct IslandView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
-        .animation(.spring(response: 0.46, dampingFraction: 0.82), value: model.huisClosUnread > 0)
+        .animation(.spring(response: 0.46, dampingFraction: 0.82), value: model.huisClosBadge > 0)
         .animation(.spring(response: 0.44, dampingFraction: 0.8), value: model.showNotifBanner)
         .ignoresSafeArea()
+        .environment(\.colorScheme, .dark)
         .onAppear { generateGreeting() }
         .onChange(of: friendBridge.myName) { _, _ in generateGreeting() }
     }
@@ -86,8 +87,9 @@ struct IslandView: View {
     var castMounted: Bool { castHosting || castWatching || castBridge.phase == .connecting }
     var castShowsVideo: Bool { model.expanded && model.view == .cast && castWatching }
 
-    @ViewBuilder var castLayer: some View {
-        if castMounted {
+    // Monté en permanence (1×1 invisible) : la page doit être dans la fenêtre AVANT de capturer
+    // l'écran (WebKit refuse la capture à une page sans focus, et une page hors fenêtre n'en a pas).
+    var castLayer: some View {
             ZStack(alignment: .topTrailing) {
                 HiddenWeb(webView: castBridge.webView)
                     .allowsHitTesting(castShowsVideo)
@@ -115,7 +117,6 @@ struct IslandView: View {
             .frame(width: castShowsVideo ? size.width : 1, height: castShowsVideo ? size.height : 1)
             .clipShape(IslandShape(bottom: model.expanded ? 28 : 12))
             .opacity(castShowsVideo ? 1 : 0.001)
-        }
     }
 
     // Les WKWebView des ponts doivent rester attachés à la fenêtre quand le notch se replie
@@ -137,7 +138,7 @@ struct IslandView: View {
         case .home:         homeView
         case .dashboard:    DashboardView(model: model, accent: data.accent, back: { model.view = .home }).frame(width: 480, height: size.height)
         case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
-        case .notification: notifCenterView.frame(width: size.width, height: size.height)
+        case .notification: homeView
         case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.dropBridge).frame(width: 480, height: size.height)
         case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 520, height: size.height)
         case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 500, height: size.height)
@@ -240,15 +241,21 @@ struct IslandView: View {
                 if !friendBridge.myName.isEmpty {
                     Text(friendBridge.myCode).font(.system(size: 9, weight: .medium)).foregroundColor(.white.opacity(0.35))
                         .textSelection(.enabled).help("Ton code ami : donne-le à tes amis")
+                    Button {
+                        friendCodeInput = renaming ? "" : friendBridge.myName
+                        renaming.toggle()
+                    } label: {
+                        Image(systemName: renaming ? "xmark" : "pencil").font(.system(size: 8, weight: .bold)).foregroundColor(.white.opacity(0.45))
+                    }.buttonStyle(.plain).help(renaming ? "Annuler" : "Changer ton nom (\(friendBridge.myName))")
                 }
             }
-            if friendBridge.myName.isEmpty {
+            if friendBridge.myName.isEmpty || renaming {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Ton nom...", text: $friendCodeInput)
-                        .textFieldStyle(.plain).font(.system(size: 11))
+                        .textFieldStyle(.plain).font(.system(size: 11)).foregroundColor(.white)
                         .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
                         .onSubmit { saveFriendName() }
-                    Button("Configurer") { saveFriendName() }
+                    Button(renaming ? "Enregistrer" : "Configurer") { saveFriendName() }
                         .buttonStyle(.plain).font(.system(size: 10, weight: .bold)).foregroundColor(data.accent)
                 }
             } else if let req = friendBridge.incomingRequests.first {
@@ -268,7 +275,7 @@ struct IslandView: View {
                 }, no: { friendBridge.incomingParty.removeFirst() })
             } else {
                 HStack(spacing: 4) {
-                    TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10))
+                    TextField("Code ami", text: $friendCodeInput).textFieldStyle(.plain).font(.system(size: 10)).foregroundColor(.white)
                         .padding(4).background(Color.white.opacity(0.1)).cornerRadius(4)
                         .onSubmit { addFriendCode() }
                     Button { addFriendCode() } label: { Image(systemName: "plus.circle.fill").foregroundColor(data.accent) }
@@ -324,7 +331,7 @@ struct IslandView: View {
     private func saveFriendName() {
         let n = friendCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { return }
-        friendBridge.saveName(n); friendCodeInput = ""
+        friendBridge.saveName(n); friendCodeInput = ""; renaming = false
     }
 
     private func addFriendCode() {
@@ -352,6 +359,7 @@ struct IslandView: View {
 
     @ObservedObject var friendBridge = FriendBridge.shared
     @State private var friendCodeInput = ""
+    @State private var renaming = false
     @State private var greeting = "Salut !"
     @State private var waving = false
     @State private var waveTask: DispatchWorkItem?
@@ -383,35 +391,6 @@ struct IslandView: View {
         greeting = msgs.randomElement()!
     }
 
-    // Écran de notifications : mascotte à gauche, notifications récentes à droite + Amis.
-    var notifCenterView: some View {
-        HStack(spacing: 16) {
-            VStack {
-                OsaCharacter(model: model, mood: .happy, accent: data.accent, size: 58)
-                Button { model.view = .home } label: {
-                    Label("Accueil", systemImage: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.6))
-                }.buttonStyle(.plain).help("Revenir à l'accueil")
-            }
-            .frame(width: 90)
-            .transition(.move(edge: .leading).combined(with: .opacity))
-
-            VStack(alignment: .leading, spacing: 8) {
-                notifHeader(size: 11)
-                if model.notifications.isEmpty {
-                    Text("Aucune notification").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
-                } else {
-                    ForEach(model.notifications.prefix(3)) { n in notifRow(n, titleSize: 12) }
-                }
-                Spacer(minLength: 0)
-                accessHint
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            
-            friendsPanel(compact: false)
-        }
-        .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 14)
-    }
-
     func relTime(_ d: Date) -> String {
         let s = Int(Date().timeIntervalSince(d))
         if s < 60 { return "à l'instant" }
@@ -421,13 +400,13 @@ struct IslandView: View {
 
     @ViewBuilder var collapsedView: some View {
         if hudActive { hudView }
-        else if playing || model.huisClosUnread > 0 {
+        else if playing || model.huisClosBadge > 0 {
             // Pochette et égaliseur collés aux bords de l'encoche physique. Messages Huis clos
             // non lus : icône à gauche (sans musique) et nombre à droite, jusqu'à la lecture.
             HStack(spacing: 0) {
                 if playing { artwork(18, 5) } else { huisClosIcon }
                 Spacer(minLength: model.notchW)
-                if model.huisClosUnread > 0 { unreadBadge } else { Waveform(color: data.accent, active: true) }
+                if model.huisClosBadge > 0 { unreadBadge } else { Waveform(color: data.accent, active: true) }
             }
             .padding(.horizontal, 7)
             .frame(width: model.notchW + 56, height: model.notchH)
@@ -446,13 +425,13 @@ struct IslandView: View {
     }
 
     var unreadBadge: some View {
-        Text(model.huisClosUnread > 99 ? "99+" : "\(model.huisClosUnread)")
+        Text(model.huisClosBadge > 99 ? "99+" : "\(model.huisClosBadge)")
             .font(.system(size: 10.5, weight: .heavy, design: .rounded)).monospacedDigit()
             .foregroundColor(.black)
             .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 16)
             .background(Capsule().fill(data.accent))
             .contentTransition(.numericText())
-            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.huisClosUnread)
+            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.huisClosBadge)
             .help("Messages non lus dans Huis clos")
     }
 

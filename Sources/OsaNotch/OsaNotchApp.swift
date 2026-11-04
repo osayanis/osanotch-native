@@ -56,6 +56,9 @@ final class AppModel: ObservableObject {
     @Published var showNotifBanner: Bool = false
     /// Messages non lus dans Huis clos : pastille sur le notch replié jusqu'à la lecture.
     @Published var huisClosUnread = 0
+    /// Nombre de non lus déjà « vus » (notification effacée) : la pastille ne revient que s'il augmente.
+    @Published var huisClosSeen = 0
+    var huisClosBadge: Int { huisClosUnread > huisClosSeen ? huisClosUnread : 0 }
     @Published var dropHover: Bool = false
     @Published var isDragging: Bool = false
     private var bannerTimer: Timer?
@@ -127,7 +130,8 @@ final class AppModel: ObservableObject {
         // Déjà dans l'appli d'origine (on lit la conversation) : rangée sans bannière.
         if let id = n.bundleID, NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased() == id.lowercased() { return }
         // Notch ouvert sur un outil (OsaDrop, OsaCast…) : on ne coupe pas ce qu'on fait.
-        if expanded && view != .home && view != .notification { return }
+        // Notch ouvert : la notification va dans la liste, sans changer d'écran
+        if expanded { return }
         view = .notification
         bannerSource = n.source
         showNotifBanner = true
@@ -143,6 +147,7 @@ final class AppModel: ObservableObject {
         let old = huisClosUnread
         guard count != old else { return }
         huisClosUnread = count
+        if count < huisClosSeen { huisClosSeen = count }     // lus dans Huis clos
         let body = count == 1 ? "1 nouveau message" : "\(count) nouveaux messages"
         guard count > 0 else {
             notifications.removeAll { $0.source == .huisClos }
@@ -173,7 +178,8 @@ final class AppModel: ObservableObject {
         if notifications.count > 12 { notifications.removeLast(notifications.count - 12) }
         notification = n.text
         // Notch ouvert sur un outil (OsaDrop, OsaCast…) : le son et la liste, sans couper ce qu'on fait
-        if expanded && view != .home && view != .notification { return }
+        // Notch ouvert : la notification va dans la liste, sans changer d'écran
+        if expanded { return }
         view = .notification
         bannerSource = n.source
         showNotifBanner = true
@@ -187,13 +193,16 @@ final class AppModel: ObservableObject {
     func dismiss(_ n: OsaNotif) {
         if notifications.first?.id == n.id && showNotifBanner { showNotifBanner = false }
         notifications.removeAll { $0.id == n.id }
+        // Effacer la ligne Huis clos efface aussi la pastille, jusqu'au prochain message
+        if n.source == .huisClos { huisClosSeen = huisClosUnread }
     }
 
-    /// Efface toutes les notifications. La pastille Huis clos, elle, reste jusqu'à la lecture.
+    /// Efface toutes les notifications, pastille Huis clos comprise (elle revient au prochain message).
     func clearNotifications() {
         showNotifBanner = false
         bannerTimer?.invalidate()
         notifications.removeAll()
+        huisClosSeen = huisClosUnread
     }
 
     /// Clic sur une notification : ouvre l'appli d'origine.
@@ -213,13 +222,13 @@ final class AppModel: ObservableObject {
     var playing: Bool { data.music?.playing ?? false }
 
     var shape: CGSize {
-        var s = Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosUnread > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+        var s = Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosBadge > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
         // Bandeau « mise à jour disponible » de l'accueil : sa propre ligne en plus.
         if expanded && view == .home && !playing && AutoUpdater.shared.updateAvailable != nil { s.height += 30 }
         return s
     }
     /// L'île est-elle dessinée (sinon seule l'encoche physique se voit) ?
-    var islandVisible: Bool { expanded || hudActive || playing || huisClosUnread > 0 || showNotifBanner || dropHover }
+    var islandVisible: Bool { expanded || hudActive || playing || huisClosBadge > 0 || showNotifBanner || dropHover }
 }
 
 enum Island {
@@ -245,7 +254,7 @@ enum Island {
         case .party:        return CGSize(width: 500, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 272)
         case .choice:       return CGSize(width: 380, height: 160)
-        case .notification: return CGSize(width: 470, height: 176)
+        case .notification: return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .onboarding:   return CGSize(width: 480, height: 480)
         }
     }
@@ -424,6 +433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if model.view == .notification {
             let over = shapeRect.insetBy(dx: -16, dy: -16).contains(p)
             if over {
+                // Au survol : le menu classique (accueil), pas un écran à part
+                model.set(\.view, .home)
                 model.set(\.expanded, true)
             } else if model.expanded {
                 // L'utilisateur a consulté puis quitté → retour accueil.

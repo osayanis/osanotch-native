@@ -77,7 +77,14 @@ struct OsaCastView: View {
                             Image(systemName: "rectangle.on.rectangle").font(.system(size: 19)).foregroundColor(.white)
                         }
                         Text("Diffuser").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-                        Text("Ton écran").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                        if let err = bridge.errorText {
+                            Text(err).font(.system(size: 9.5)).foregroundColor(.red.opacity(0.9)).multilineTextAlignment(.center)
+                                .lineLimit(3).padding(.horizontal, 8)
+                        } else if bridge.phase == .waiting {
+                            Text("Choix de l'écran…").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                        } else {
+                            Text("Ton écran").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                        }
                     }
                 }
             }

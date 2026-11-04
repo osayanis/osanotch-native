@@ -247,11 +247,12 @@ enum Island {
         }
         _ = sw
         switch view {
+        // Tous les onglets de la barre (home, dashboard, drop, cast, party) : même largeur, 480.
         // Raccourcis Party / Drop / Cast retirés (déjà dans la barre d'onglets) : accueil plus bas.
         case .home:         return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .drop:         return CGSize(width: 480, height: 210)
-        case .cast:         return CGSize(width: 520, height: vh)
-        case .party:        return CGSize(width: 500, height: vh)
+        case .cast:         return CGSize(width: 480, height: vh)
+        case .party:        return CGSize(width: 480, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 272)
         case .choice:       return CGSize(width: 380, height: 160)
         case .notification: return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)

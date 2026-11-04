@@ -55,6 +55,7 @@ struct OsaCastView: View {
                     VStack(spacing: 10) {
                         Text("OSACAST").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                         Text(bridge.code).font(.system(size: 24, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(4)
+                            .lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 8)
                         HStack(spacing: 5) {
                             Circle().fill(live ? .red : .white.opacity(0.4)).frame(width: 7, height: 7)
                             Text(live ? "EN DIRECT" : "EN ATTENTE").font(.system(size: 9.5, weight: .bold)).foregroundColor(live ? .red : .white.opacity(0.5)).tracking(1)

@@ -102,6 +102,7 @@ struct OsaPartyView: View {
                 Text(bridge.mode == "host" ? "TON SALON" : "SALON REJOINT").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.6)).tracking(1.5)
                 Spacer()
                 Text(bridge.code.isEmpty ? "······" : bridge.code).font(.system(size: 18, weight: .bold, design: .monospaced)).foregroundColor(.white).tracking(3)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer()
                 Image(systemName: "headphones").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
                 Text("\(bridge.members)").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
@@ -183,11 +184,12 @@ struct OsaPartyView: View {
             .frame(height: 86)
 
             HStack(spacing: 6) {
-                footerStatus
-                Spacer()
+                // Largeur 480 : le statut se réduit (une ligne) plutôt que de pousser « Quitter ».
+                footerStatus.lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 6)
                 Button { bridge.leave(); entry = "" } label: {
-                    Text("Quitter le salon").font(.system(size: 10, weight: .bold)).foregroundColor(.red.opacity(0.8))
-                }.buttonStyle(.plain)
+                    Text("Quitter le salon").font(.system(size: 10, weight: .bold)).foregroundColor(.red.opacity(0.8)).fixedSize()
+                }.buttonStyle(.plain).layoutPriority(1)
             }
         }.padding(.horizontal, 20).padding(.top, 2)
     }

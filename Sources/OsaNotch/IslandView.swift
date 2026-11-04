@@ -140,8 +140,8 @@ struct IslandView: View {
         case .choice:       ChoiceView(model: model, accent: data.accent).frame(width: 380, height: size.height)
         case .notification: homeView
         case .drop:         OsaDropView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.dropBridge).frame(width: 480, height: size.height)
-        case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 520, height: size.height)
-        case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 500, height: size.height)
+        case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 480, height: size.height)
+        case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 480, height: size.height)
         case .onboarding:   OnboardingView(model: model, accent: data.accent).frame(width: 480, height: size.height)
         }
     }

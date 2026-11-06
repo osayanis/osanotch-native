@@ -15,7 +15,7 @@ final class AutoUpdater: ObservableObject {
     private var timer: Timer?
 
     // Version actuelle (définie dans le code ; bumpée par publish.sh)
-    private let currentVersion = "1.0.8"
+    private let currentVersion = "1.0.9"
 
     /// Au lancement, puis toutes les 6 heures : OsaNotch tourne souvent des jours sans être relancé.
     /// (L'API GitHub sans compte autorise 60 requêtes par heure : on en est loin.)

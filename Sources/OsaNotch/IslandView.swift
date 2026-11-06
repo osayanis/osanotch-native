@@ -46,22 +46,27 @@ struct IslandView: View {
         return .idle
     }
     var size: CGSize { model.shape }
+    /// Rayon des coins du bas : ouvert 28, bannière 22 (assorti à l'icône), replié 12.
+    var radius: CGFloat { model.expanded ? 28 : (bannerShown ? 22 : 12) }
+    var bannerShown: Bool { model.view == .notification && model.showNotifBanner }
 
     var body: some View {
         let exp = model.expanded
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                IslandShape(bottom: exp ? 28 : 12).fill(Color.black)
+                IslandShape(bottom: radius).fill(Color.black)
                 if exp { content.transition(.opacity) }
-                else if model.view == .notification && model.showNotifBanner { notifBanner.transition(.opacity) }
+                else if bannerShown { notifBanner.transition(.bannerContent) }
                 else { collapsedView.transition(.opacity) }
                 castLayer   // moteur OsaCast persistant : reste monté même notch replié
                 bridgesLayer // ponts OsaDrop / OsaParty : idem, invisibles
-                if model.dropHover { IslandShape(bottom: exp ? 28 : 12).stroke(data.accent, lineWidth: 2) }
+                if model.dropHover { IslandShape(bottom: radius).stroke(data.accent, lineWidth: 2) }
             }
-            .opacity(!exp && !hudActive && !playing && model.huisClosBadge == 0 && !model.showNotifBanner && !model.dropHover ? 0 : 1)
+            // bannerLeaving : l'île reste noire le temps de se rétracter dans l'encoche (sinon elle
+            // s'estompait en rétrécissant, comme un fantôme), puis disparaît sans que ça se voie.
+            .opacity(!exp && !hudActive && !playing && model.huisClosBadge == 0 && !model.showNotifBanner && !model.bannerLeaving && !model.dropHover ? 0 : 1)
             .frame(width: size.width, height: size.height)
-            .clipShape(IslandShape(bottom: exp ? 28 : 12))
+            .clipShape(IslandShape(bottom: radius))
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -72,7 +77,9 @@ struct IslandView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: model.huisClosBadge > 0)
-        .animation(.spring(response: 0.44, dampingFraction: 0.8), value: model.showNotifBanner)
+        // Entrée : l'île descend avec un léger rebond. Sortie : elle remonte sans rebond, plus vite.
+        .animation(model.showNotifBanner ? .spring(response: 0.42, dampingFraction: 0.78)
+                                         : .spring(response: 0.34, dampingFraction: 0.92), value: model.showNotifBanner)
         .ignoresSafeArea()
         .environment(\.colorScheme, .dark)
         .onAppear { generateGreeting() }
@@ -154,31 +161,51 @@ struct IslandView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0).frame(height: model.notchH)
             if let n = model.notifications.first {
-                HStack(spacing: 11) {
-                    notifIcon(n, size: 30)
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 5) {
-                            Text(n.title).font(.system(size: 12, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                HStack(alignment: .center, spacing: 12) {
+                    notifIcon(n, size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(n.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
                             if n.count > 1 {
-                                Text("+\(n.count - 1)").font(.system(size: 9.5, weight: .bold)).foregroundColor(.black)
-                                    .padding(.horizontal, 5).padding(.vertical, 1).background(Capsule().fill(data.accent))
+                                Text("+\(n.count - 1)")
+                                    .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Capsule().fill(data.accent))
                             }
+                            Spacer(minLength: 8)
+                            Text(n.sourceName)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.38))
+                                .lineLimit(1)
                         }
-                        Text(n.body).font(.system(size: 11)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                        if !n.body.isEmpty {
+                            Text(n.body)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.72))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .frame(height: 52)
+                // Marges alignées sur l'arrondi du bas (22) : l'icône ne frôle pas le bord.
+                .padding(.leading, 14).padding(.trailing, 18)
+                .padding(.bottom, 4)
+                .frame(height: Island.bannerH)
                 .contentShape(Rectangle())
                 .onTapGesture { model.open(n) }
                 .id(n.id)
-                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+                // Notification suivante pendant l'affichage : l'ancienne s'efface vers le haut, floutée.
+                .transition(.asymmetric(insertion: .bannerContent.combined(with: .offset(y: 6)),
+                                        removal: .bannerContent.combined(with: .offset(y: -6))))
             }
             if hudActive { hudRow.frame(height: 28).transition(.move(edge: .top).combined(with: .opacity)) }
         }
-        .frame(width: 360, height: size.height, alignment: .top)
-        .animation(.spring(response: 0.36, dampingFraction: 0.8), value: model.notifications.first?.id)
+        .frame(width: Island.bannerW, height: size.height, alignment: .top)
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: model.notifications.first?.id)
         .animation(.spring(response: 0.36, dampingFraction: 0.8), value: hudActive)
     }
 
@@ -696,5 +723,30 @@ struct DismissButton: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .help("Effacer")
+    }
+}
+
+/// Apparition / disparition du contenu de la bannière : flou + léger recul vers l'encoche, plutôt
+/// qu'un simple fondu (on ne voit plus le texte se faire écraser pendant que l'île se rétracte).
+private struct BannerContentEffect: ViewModifier {
+    let hidden: Bool
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: hidden ? 8 : 0)
+            .scaleEffect(hidden ? 0.92 : 1, anchor: .top)
+            .opacity(hidden ? 0 : 1)
+    }
+}
+
+extension AnyTransition {
+    static var bannerContent: AnyTransition {
+        .asymmetric(
+            // Entrée : un peu après l'île, pour que le texte n'apparaisse pas dans une forme trop petite
+            insertion: .modifier(active: BannerContentEffect(hidden: true), identity: BannerContentEffect(hidden: false))
+                .animation(.spring(response: 0.4, dampingFraction: 0.86).delay(0.07)),
+            // Sortie : rapide, avant que l'île ne se referme
+            removal: .modifier(active: BannerContentEffect(hidden: true), identity: BannerContentEffect(hidden: false))
+                .animation(.easeOut(duration: 0.16))
+        )
     }
 }

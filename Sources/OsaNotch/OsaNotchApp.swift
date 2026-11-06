@@ -26,6 +26,15 @@ struct OsaNotif: Identifiable, Equatable {
         }
     }
     var text: String { body.isEmpty ? title : body }
+    /// Nom de l'appli d'origine, discret à droite de la bannière.
+    var sourceName: String {
+        switch source {
+        case .ai: return "OsaNotch"
+        case .messages: return "Messages"
+        case .mail: return "Mail"
+        case .huisClos, .huisClosPoke: return "Huis clos"
+        }
+    }
 }
 
 final class AppModel: ObservableObject {
@@ -53,7 +62,20 @@ final class AppModel: ObservableObject {
     }
     @Published var notification: String? = nil
     @Published var notifications: [OsaNotif] = []
-    @Published var showNotifBanner: Bool = false
+    @Published var showNotifBanner: Bool = false {
+        didSet {
+            guard oldValue != showNotifBanner else { return }
+            leaveTimer?.invalidate()
+            if showNotifBanner { bannerLeaving = false; return }
+            // Le temps que l'île se rétracte dans l'encoche (ressort de sortie ~0,34 s)
+            bannerLeaving = true
+            leaveTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
+                self?.bannerLeaving = false
+            }
+        }
+    }
+    @Published var bannerLeaving = false
+    private var leaveTimer: Timer?
     /// Messages non lus dans Huis clos : pastille sur le notch replié jusqu'à la lecture.
     @Published var huisClosUnread = 0
     /// Nombre de non lus déjà « vus » (notification effacée) : la pastille ne revient que s'il augmente.
@@ -234,12 +256,15 @@ final class AppModel: ObservableObject {
 enum Island {
     static let winW: CGFloat = 600
     static let winH: CGFloat = 460
+    /// Bannière de notification sous l'encoche.
+    static let bannerW: CGFloat = 380
+    static let bannerH: CGFloat = 58
     static func shapeSize(expanded: Bool, view: AppView, playing: Bool, badge: Bool = false, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero) -> CGSize {
         if theater && view == .cast { return theaterSize }
         if !expanded {
             // Bannière de notification : descend sous l'encoche, visible sans survol.
             // Avec le son / la luminosité en même temps, la barre se range dessous.
-            if view == .notification && notifBanner { return CGSize(width: 360, height: notchH + 52 + (hud ? 28 : 0)) }
+            if view == .notification && notifBanner { return CGSize(width: bannerW, height: notchH + bannerH + (hud ? 28 : 0)) }
             // Le HUD volume/luminosité descend SOUS l'encoche physique → visible, plus large.
             if hud { return CGSize(width: notchW, height: notchH + 30) }
             // Musique et / ou pastille Huis clos : de part et d'autre de l'encoche physique.
@@ -282,7 +307,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = NSRunningApplication.current
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.osalabs.osanotch").filter { $0 != me }
-        if !others.isEmpty { NSApp.terminate(nil); return }
+        if !others.isEmpty {
+            // Une seule copie à la fois. Si celle qui tourne est plus ancienne (copie de développement,
+            // ou vieille version relancée par macOS), c'est elle qui laisse la place.
+            let mine = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            let older = others.allSatisfy { app in
+                guard let url = app.bundleURL,
+                      let info = NSDictionary(contentsOf: url.appendingPathComponent("Contents/Info.plist")),
+                      let v = info["CFBundleShortVersionString"] as? String else { return false }
+                return AutoUpdater.isNewer(mine, than: v)
+            }
+            guard older else { NSApp.terminate(nil); return }
+            others.forEach { $0.terminate() }
+            let limit = Date().addingTimeInterval(3)
+            while others.contains(where: { !$0.isTerminated }) && Date() < limit {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            others.filter { !$0.isTerminated }.forEach { $0.forceTerminate() }
+        }
         NSApp.setActivationPolicy(.accessory)
 
         let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first!

@@ -76,6 +76,7 @@ struct IslandView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: playing)
+        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: model.showPlayer)
         .animation(.spring(response: 0.46, dampingFraction: 0.82), value: model.huisClosBadge > 0)
         // Entrée : l'île descend avec un léger rebond. Sortie : elle remonte sans rebond, plus vite.
         .animation(model.showNotifBanner ? .spring(response: 0.42, dampingFraction: 0.78)
@@ -84,6 +85,7 @@ struct IslandView: View {
         .environment(\.colorScheme, .dark)
         .onAppear { generateGreeting() }
         .onChange(of: friendBridge.myName) { _, _ in generateGreeting() }
+        .onChange(of: playing) { _, on in if on { model.showPlayer = true } }
     }
 
     // ── OsaCast : le WKWebView doit rester attaché à la fenêtre même quand le notch
@@ -506,7 +508,7 @@ struct IslandView: View {
     var homeView: some View {
         VStack(spacing: 0) {
             TabBarView(model: model, accent: data.accent, dropHover: model.dropHover, battery: data.battery, lowBat: lowBat)
-            if playing && !model.dropHover {
+            if model.homePlayer && !model.dropHover {
                 playerView.transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
                 idleHome.transition(.opacity)

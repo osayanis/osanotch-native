@@ -9,7 +9,18 @@ struct TabBarView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            tbButton("house.fill", .home)
+            homeButton
+            // Musique en cours : l'onde ramène au lecteur, la maison à l'accueil (amis, notifications).
+            if model.playing {
+                Button { model.view = .home; model.showPlayer = true } label: {
+                    Image(systemName: "waveform").font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(model.view == .home && model.showPlayer ? accent : .white.opacity(0.45))
+                        .padding(5).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Musique en cours")
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
             Spacer()
@@ -24,6 +35,17 @@ struct TabBarView: View {
                 }
             }
         }.padding(.leading, 18).padding(.trailing, 14).padding(.top, 11)
+    }
+
+    /// Maison : allumée sur l'accueil complet ; pendant la lecture, c'est elle qui quitte le lecteur.
+    var homeButton: some View {
+        let on = model.view == .home && !model.homePlayer
+        return Button { model.view = .home; model.showPlayer = false } label: {
+            Image(systemName: "house.fill").font(.system(size: 14))
+                .foregroundColor(on ? .white : .white.opacity(0.45)).padding(5).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Accueil : amis et notifications")
     }
 
     func tbButton(_ icon: String, _ target: AppView) -> some View {

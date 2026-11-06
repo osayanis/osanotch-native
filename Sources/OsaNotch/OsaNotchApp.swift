@@ -242,11 +242,15 @@ final class AppModel: ObservableObject {
 
     var hudActive: Bool { sysObs.showVolumeHUD || sysObs.showBrightnessHUD }
     var playing: Bool { data.music?.playing ?? false }
+    /// Accueil pendant la lecture : le lecteur (par défaut) ou l'accueil complet (amis, notifications).
+    /// Repasse sur le lecteur à chaque nouvelle lecture.
+    @Published var showPlayer = true
+    var homePlayer: Bool { playing && showPlayer }
 
     var shape: CGSize {
-        var s = Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosBadge > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize)
+        var s = Island.shapeSize(expanded: expanded, view: view, playing: playing, badge: huisClosBadge > 0, hud: hudActive, notifBanner: showNotifBanner, notchW: notchW, notchH: notchH, vh: viewHeight, sw: screenW, theater: theater, theaterSize: theaterSize, player: homePlayer)
         // Bandeau « mise à jour disponible » de l'accueil : sa propre ligne en plus.
-        if expanded && view == .home && !playing && AutoUpdater.shared.updateAvailable != nil { s.height += 30 }
+        if expanded && view == .home && !homePlayer && AutoUpdater.shared.updateAvailable != nil { s.height += 30 }
         return s
     }
     /// L'île est-elle dessinée (sinon seule l'encoche physique se voit) ?
@@ -259,7 +263,8 @@ enum Island {
     /// Bannière de notification sous l'encoche.
     static let bannerW: CGFloat = 380
     static let bannerH: CGFloat = 58
-    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, badge: Bool = false, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero) -> CGSize {
+    static func shapeSize(expanded: Bool, view: AppView, playing: Bool, badge: Bool = false, hud: Bool, notifBanner: Bool, notchW: CGFloat, notchH: CGFloat, vh: CGFloat, sw: CGFloat, theater: Bool = false, theaterSize: CGSize = .zero, player: Bool? = nil) -> CGSize {
+        let player = player ?? playing
         if theater && view == .cast { return theaterSize }
         if !expanded {
             // Bannière de notification : descend sous l'encoche, visible sans survol.
@@ -274,13 +279,13 @@ enum Island {
         switch view {
         // Tous les onglets de la barre (home, dashboard, drop, cast, party) : même largeur, 480.
         // Raccourcis Party / Drop / Cast retirés (déjà dans la barre d'onglets) : accueil plus bas.
-        case .home:         return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
+        case .home:         return player ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .drop:         return CGSize(width: 480, height: 210)
         case .cast:         return CGSize(width: 480, height: vh)
         case .party:        return CGSize(width: 480, height: vh)
         case .dashboard:    return CGSize(width: 480, height: 272)
         case .choice:       return CGSize(width: 380, height: 160)
-        case .notification: return playing ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
+        case .notification: return player ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .onboarding:   return CGSize(width: 480, height: 480)
         }
     }
@@ -439,6 +444,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.model.feed.needsAccess, self.model.view != .onboarding else { return }
             self.model.push(OsaNotif(source: .ai, title: "Messages et Mail", body: "Autorise l'accès complet au disque (clic sur la liste)"))
         }
+
+        // Captures de test : OSANOTCH_DEMO=music (lecteur) ou music-home (accueil pendant la lecture),
+        // encoche ouverte et figée, sans toucher à la souris ni lancer de son.
+        if let demo = SystemData.demo, demo.hasPrefix("music") {
+            model.data.music = MusicInfo(playing: true, title: "Titre de test", artist: "Artiste", source: "Music",
+                                         artworkURL: nil, position: 62, duration: 214)
+            model.data.positionSampledAt = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.model.showPlayer = demo == "music"
+                self?.model.view = .home
+                self?.model.expanded = true
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -454,6 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
+        if SystemData.demo != nil { return }
         let p = NSEvent.mouseLocation
         guard let sf = (panel.screen ?? NSScreen.main)?.frame else { return }
         defer { model.suite.update(bottom: model.islandVisible ? model.shape.height : model.notchH) }

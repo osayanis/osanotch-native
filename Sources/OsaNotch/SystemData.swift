@@ -62,7 +62,11 @@ final class SystemData: ObservableObject {
     }
 
     // MARK: Musique (sous-processus osascript, file série + timeout + anti-accumulation)
+    /// Tests (OSANOTCH_DEMO=music…) : musique factice, rien n'est lu dans Music / Spotify.
+    static let demo = ProcessInfo.processInfo.environment["OSANOTCH_DEMO"]
+
     private func pollMusic() {
+        if Self.demo != nil { return }
         if musicBusy { return }
         musicBusy = true
         q.async {

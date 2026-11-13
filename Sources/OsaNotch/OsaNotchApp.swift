@@ -17,6 +17,7 @@ struct OsaNotif: Identifiable, Equatable {
     var count = 1                    // regroupées : plusieurs messages du même expéditeur
     var disk: DiskKind? = nil        // disque branché : son type (logo)
     var url: URL? = nil              // disque branché : ouvert dans le Finder au clic
+    var diskGone = false             // disque éjecté ou retiré (petit symbole « éjecter »)
 
     /// Appli d'origine : icône, et ouverture au clic.
     var bundleID: String? {
@@ -123,6 +124,7 @@ final class AppModel: ObservableObject {
         feed.onNotif = { [weak self] n in self?.push(n) }
         // Clé USB, disque dur, SSD, carte SD branchés
         disks.onDisk = { [weak self] n in self?.push(n) }
+        disks.onGone = { [weak self] url in self?.notifications.removeAll { $0.url == url } }
         disks.start()
         // Amis : demande reçue, acceptée, invitation OsaCast / OsaParty → bannière
         friendBridge.onNotice = { [weak self] text in self?.push(OsaNotif(source: .ai, title: "Amis", body: text)) }
@@ -460,6 +462,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Captures de test : OSANOTCH_DEMO=music (lecteur) ou music-home (accueil pendant la lecture),
         // encoche ouverte et figée, sans toucher à la souris ni lancer de son.
         // OSANOTCH_DEMO=disk:/Volumes/<nom> : annonce ce volume comme s'il venait d'être branché
+        // OSANOTCH_DEMO=diskimages : les images disque comptent comme des disques (tests du retrait)
+        if SystemData.demo == "diskimages" { DiskWatcher.allowImages = true }
         if let demo = SystemData.demo, demo.hasPrefix("disk:") {
             let url = URL(fileURLWithPath: String(demo.dropFirst(5)))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.disks.announce(url) }

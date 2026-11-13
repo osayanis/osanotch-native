@@ -217,9 +217,19 @@ struct IslandView: View {
             Image(nsImage: icon).resizable().interpolation(.high).frame(width: size, height: size)
         } else if let kind = n.disk {
             // Disque branché : logo selon le type (clé USB, carte SD, SSD, disque dur)
-            Image(systemName: kind.symbol).font(.system(size: size * 0.44, weight: .semibold)).foregroundColor(.white)
+            Image(systemName: kind.symbol).font(.system(size: size * 0.44, weight: .semibold))
+                .foregroundColor(.white.opacity(n.diskGone ? 0.55 : 1))
                 .frame(width: size, height: size)
                 .background(RoundedRectangle(cornerRadius: size * 0.25).fill(Color(white: 0.18)))
+                // Éjecté / retiré : petit symbole « éjecter » dans le coin
+                .overlay(alignment: .bottomTrailing) {
+                    if n.diskGone {
+                        Image(systemName: "eject.fill").font(.system(size: size * 0.24, weight: .bold)).foregroundColor(.black)
+                            .frame(width: size * 0.46, height: size * 0.46)
+                            .background(Circle().fill(.white))
+                            .offset(x: size * 0.12, y: size * 0.12)
+                    }
+                }
         } else if n.source == .huisClos || n.source == .huisClosPoke {
             Image(systemName: "lock.fill").font(.system(size: size * 0.42, weight: .bold)).foregroundColor(.white)
                 .frame(width: size, height: size).background(RoundedRectangle(cornerRadius: size * 0.25).fill(Color(white: 0.18)))

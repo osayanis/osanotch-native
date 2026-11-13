@@ -8,18 +8,20 @@ import EventKit
 enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding }
 
 struct OsaNotif: Identifiable, Equatable {
-    enum Source { case ai, messages, mail, huisClos, huisClosPoke }
+    enum Source { case ai, messages, mail, huisClos, huisClosPoke, disk }
     let id = UUID()
     let source: Source
     let title: String
     let body: String
     var date = Date()
     var count = 1                    // regroupées : plusieurs messages du même expéditeur
+    var disk: DiskKind? = nil        // disque branché : son type (logo)
+    var url: URL? = nil              // disque branché : ouvert dans le Finder au clic
 
     /// Appli d'origine : icône, et ouverture au clic.
     var bundleID: String? {
         switch source {
-        case .ai: return nil
+        case .ai, .disk: return nil
         case .messages: return "com.apple.MobileSMS"
         case .mail: return "com.apple.mail"
         case .huisClos, .huisClosPoke: return "fr.kinam.HuisClos"
@@ -33,6 +35,7 @@ struct OsaNotif: Identifiable, Equatable {
         case .messages: return "Messages"
         case .mail: return "Mail"
         case .huisClos, .huisClosPoke: return "Huis clos"
+        case .disk: return "Disques"
         }
     }
 }
@@ -88,6 +91,7 @@ final class AppModel: ObservableObject {
     
     let aiTracker = AITracker()
     let feed = NotificationFeed()
+    let disks = DiskWatcher()
     let suite = SuiteLink()
     private var suiteSinks = Set<AnyCancellable>()
     let clipboard = ClipboardManager()
@@ -117,6 +121,9 @@ final class AppModel: ObservableObject {
         aiTracker.start()
         // Messages et Mail (Centre de notifications) ; Huis clos annonce lui-même son nombre de non lus
         feed.onNotif = { [weak self] n in self?.push(n) }
+        // Clé USB, disque dur, SSD, carte SD branchés
+        disks.onDisk = { [weak self] n in self?.push(n) }
+        disks.start()
         // Amis : demande reçue, acceptée, invitation OsaCast / OsaParty → bannière
         friendBridge.onNotice = { [weak self] text in self?.push(OsaNotif(source: .ai, title: "Amis", body: text)) }
         feed.start()
@@ -140,7 +147,7 @@ final class AppModel: ObservableObject {
     func push(_ n: OsaNotif) {
         var n = n
         // Rafale du même expéditeur : une seule ligne « +2 », pas trois bannières.
-        if let first = notifications.first, first.source == n.source, first.title == n.title,
+        if n.source != .disk, let first = notifications.first, first.source == n.source, first.title == n.title,
            n.date.timeIntervalSince(first.date) < 90 {
             n.count = first.count + 1
             notifications[0] = n
@@ -229,6 +236,11 @@ final class AppModel: ObservableObject {
 
     /// Clic sur une notification : ouvre l'appli d'origine.
     func open(_ n: OsaNotif) {
+        if let url = n.url {
+            NSWorkspace.shared.open(url)
+            showNotifBanner = false
+            return
+        }
         guard let id = n.bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         showNotifBanner = false
@@ -447,6 +459,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Captures de test : OSANOTCH_DEMO=music (lecteur) ou music-home (accueil pendant la lecture),
         // encoche ouverte et figée, sans toucher à la souris ni lancer de son.
+        // OSANOTCH_DEMO=disk:/Volumes/<nom> : annonce ce volume comme s'il venait d'être branché
+        if let demo = SystemData.demo, demo.hasPrefix("disk:") {
+            let url = URL(fileURLWithPath: String(demo.dropFirst(5)))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.disks.announce(url) }
+        }
         if let demo = SystemData.demo, demo.hasPrefix("music") {
             model.data.music = MusicInfo(playing: true, title: "Titre de test", artist: "Artiste", source: "Music",
                                          artworkURL: nil, position: 62, duration: 214)

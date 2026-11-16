@@ -128,6 +128,8 @@ final class AppModel: ObservableObject {
         disks.start()
         // Amis : demande reçue, acceptée, invitation OsaCast / OsaParty → bannière
         friendBridge.onNotice = { [weak self] text in self?.push(OsaNotif(source: .ai, title: "Amis", body: text)) }
+        // Mochi (chez Jeanne) a été secoué
+        friendBridge.onMochi = { [weak self] name in self?.push(OsaNotif(source: .ai, title: name, body: "\(name) pense à vous 💕")) }
         feed.start()
         suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
         suite.onHuisClosPoke = { [weak self] de in self?.pokeHuisClos(de) }

@@ -46,6 +46,16 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
     /// Bannière dans le notch quand quelque chose arrive (branché par AppModel).
     var onNotice: ((String) -> Void)?
 
+    /// Mochi (l'app de Jeanne, dépôt osayanis/mochi) se présente tout seul à ce code. Tant qu'aucun
+    /// Mochi ne l'a fait, rien ne change dans OsaNotch : la fonction n'existe que chez Yanis.
+    @Published private(set) var mochi: Friend?
+    /// « Jeanne pense à vous » : elle a secoué son Mochi.
+    var onMochi: ((String) -> Void)?
+    private var pendingLove: Date? {
+        get { UserDefaults.standard.object(forKey: "OsaMochiLoveWaiting") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "OsaMochiLoveWaiting") }
+    }
+
     private static let url = URL(string: "wss://osadrop.osalabs.fr/socket.io/?EIO=4&transport=websocket")!
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -72,6 +82,7 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
             friends = f
         }
         pendingOut = Set(UserDefaults.standard.stringArray(forKey: "OsaFriendsPending") ?? [])
+        if let d = UserDefaults.standard.data(forKey: "OsaMochi"), let m = try? JSONDecoder().decode(Friend.self, from: d) { mochi = m }
         connect()
     }
 
@@ -128,6 +139,29 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
         }
     }
 
+    /// Plusieurs clics sur la mascotte : le Mochi de Jeanne fait sa pirouette à cœurs. Si son Mac
+    /// est éteint, le message part dès que Mochi se reconnecte (dans les 12 h).
+    func sendMochiLove(done: @escaping (Bool) -> Void) {
+        guard let m = mochi else { return done(false) }
+        send(to: m.code, ["type": "notch_love", "name": myName]) { [weak self] ok in
+            if !ok { self?.pendingLove = Date() }
+            done(ok)
+        }
+    }
+
+    private func flushMochiLove() {
+        guard let t = pendingLove, let m = mochi else { return }
+        if Date().timeIntervalSince(t) > 12 * 3600 { pendingLove = nil; return }
+        send(to: m.code, ["type": "notch_love", "name": myName]) { [weak self] ok in if ok { self?.pendingLove = nil } }
+    }
+
+    private func setMochi(name: String, code: String) {
+        let m = Friend(name: name.isEmpty ? "Mochi" : name, code: code)
+        guard m != mochi else { return }
+        mochi = m
+        if let d = try? JSONEncoder().encode(m) { UserDefaults.standard.set(d, forKey: "OsaMochi") }
+    }
+
     private func savePending() { UserDefaults.standard.set(Array(pendingOut), forKey: "OsaFriendsPending") }
 
     private func show(_ text: String) {
@@ -165,6 +199,10 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
             guard let c = d["castCode"] as? String, !c.isEmpty, c.count <= 12 else { return }
             incomingCast.append(CastRequest(friendName: who, castCode: c))
             onNotice?("\(who) partage son écran avec toi")
+        case "mochi_hello", "mochi_pense":
+            guard let code = d["code"] as? String, code.count == 6, code.allSatisfy(\.isNumber) else { return }
+            setMochi(name: name, code: code)
+            if type == "mochi_pense" { onMochi?(name.isEmpty ? "Jeanne" : name) } else { flushMochiLove() }
         case "party_request":
             guard let c = d["partyCode"] as? String, !c.isEmpty, c.count <= 12 else { return }
             incomingParty.append(PartyRequest(friendName: who, partyCode: c))
@@ -214,6 +252,10 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
         case "0":                                               // namespace rejoint
             connected = true; online = true; retry = 2
             emit(["friend-listen", myCode])
+            if let m = mochi {
+                send(to: m.code, ["type": "notch_hello", "name": myName]) { _ in }
+                flushMochiLove()
+            }
         case "2":                                               // évènement
             guard let arr = json(String(rest.drop(while: \.isNumber))) as? [Any],
                   arr.first as? String == "friend-msg", let msg = arr.dropFirst().first as? [String: Any] else { return }

@@ -406,6 +406,23 @@ struct IslandView: View {
     @State private var renaming = false
     @State private var greeting = "Salut !"
     @State private var waving = false
+    @State private var loveTaps: [Date] = []
+    @State private var loveText: String?
+
+    /// Clics répétés sur la mascotte (seulement si un Mochi s'est présenté) : 3 clics rapides
+    /// envoient un cœur au Mochi de Jeanne.
+    private func mascotTapped() {
+        guard let m = friendBridge.mochi else { return }
+        triggerWave()
+        loveTaps.append(Date())
+        loveTaps.removeAll { Date().timeIntervalSince($0) > 1.5 }
+        guard loveTaps.count >= 3 else { return }
+        loveTaps.removeAll()
+        friendBridge.sendMochiLove { ok in
+            withAnimation { loveText = ok ? "💕 Envoyé à \(m.name)" : "💌 Dès que \(m.name) est en ligne" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { withAnimation { loveText = nil } }
+        }
+    }
     @State private var waveTask: DispatchWorkItem?
 
     // Déclenche un petit « coucou » de la mascotte sur l'accueil.
@@ -540,9 +557,13 @@ struct IslandView: View {
                 HStack(spacing: 16) {
                     VStack(spacing: -2) {
                         OsaCharacter(model: model, mood: mood, accent: data.accent, size: 54, wave: waving)
-                        Text(greeting).font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                        Text(loveText ?? greeting).font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(loveText == nil ? .white.opacity(0.6) : Color(red: 1, green: 0.55, blue: 0.65))
+                            .lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .frame(width: 80)
+                    .contentShape(Rectangle())
+                    .onTapGesture { mascotTapped() }
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     
                     VStack(alignment: .leading, spacing: 6) {

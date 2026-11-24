@@ -67,8 +67,8 @@ struct BoubouScene: Equatable {
     var emojis: [String] = []
     /// cuisine : le plat qui sort de la marmite ("🫕" = mystère)
     var resultat: String? = nil
-    static let genres: [String: SceneKind] = ["courses": .courses, "bain": .bain, "cuisiner": .cuisine, "nourrir": .repas,
-                                              "planter": .planter, "arroser": .arroser, "recolter": .recolter]
+    // planter / arroser / récolter s'animent directement dans les bacs du potager : pas de scène par-dessus
+    static let genres: [String: SceneKind] = ["courses": .courses, "bain": .bain, "cuisiner": .cuisine, "nourrir": .repas]
     static var durees: [String: Double] { genres.mapValues(\.duree) }
 }
 

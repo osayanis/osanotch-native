@@ -1,4 +1,4 @@
-// Copie conforme de ~/dev/Boubou/Sources/Boubou/Scenes.swift (scènes 3D du foyer). Recopier tel quel quand il change.
+// Copie conforme de ~/dev/Boubou/Sources/Boubou/Scenes.swift. Recopier tel quel quand il change.
 
 import SwiftUI
 

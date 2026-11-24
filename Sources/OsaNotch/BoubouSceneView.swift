@@ -1,25 +1,16 @@
 import SwiftUI
 
-/// Scène jouée dans l'en-tête de l'onglet Boubou juste après un geste (courses, bain, cuisiner,
-/// nourrir, planter, arroser, recolter : voir `BoubouScene.durees`). Placeholder : le vrai dessin
-/// viendra de l'app Boubou. Contrat : 84 × 66 pt, `debut` = moment du clic (pour un TimelineView).
+/// La scène 3D jouée par-dessus l'onglet Boubou juste après un geste de Yanis (courses au marché, bain,
+/// cuisine, repas, potager). Le dessin est dans BoubouScenes.swift (copie de l'app Boubou).
 struct BoubouSceneView: View {
-    var nom: String
-    var debut: Date
+    var scene: BoubouScene
     var etat: BoubouEtat
+    var largeur: CGFloat = 250
 
-    private static let accessoires: [String: String] = ["courses": "🛒", "bain": "🛁", "cuisiner": "🍲", "nourrir": "🍽️",
-                                                       "planter": "🌱", "arroser": "💧", "recolter": "🧺"]
     var body: some View {
-        TimelineView(.animation) { tl in
-            let t = tl.date.timeIntervalSince(debut)
-            ZStack(alignment: .bottomTrailing) {
-                BoubouPortrait(humeur: "heureux", dort: false, malade: etat.malade == true, accessoire: etat.accessoire,
-                               sale: false, size: 54)
-                    .offset(y: -abs(sin(t * 5)) * 6)
-                Text(Self.accessoires[nom] ?? "✨").font(.system(size: 18))
-                    .offset(x: 4, y: 2)
-            }
+        if let kind = BoubouScene.genres[scene.nom] {
+            SceneAnimee(spec: SceneSpec(kind: kind, debut: scene.debut, emojis: scene.emojis, resultat: scene.resultat,
+                                        accessoire: etat.accessoire), width: largeur)
         }
     }
 }

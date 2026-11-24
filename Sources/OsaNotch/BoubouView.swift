@@ -75,6 +75,18 @@ struct BoubouPanneau: View {
                     }
                 }
                 .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 12)
+                .overlay {
+                    // la scène 3D sort au-dessus de l'onglet ; on peut continuer à cliquer à travers
+                    if let sc = sceneApercu ?? foyer.scene {
+                        ZStack {
+                            RadialGradient(colors: [.black.opacity(0.6), .black.opacity(0)], center: .center, startRadius: 30, endRadius: 210)
+                            BoubouSceneView(scene: sc, etat: e).id(sc.debut).offset(y: -22)
+                        }
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: (sceneApercu ?? foyer.scene)?.debut)
             } else {
                 VStack(spacing: 6) {
                     BoubouPortrait(humeur: "calme", dort: false, malade: false, accessoire: nil, size: 56)
@@ -93,16 +105,13 @@ struct BoubouPanneau: View {
     func entete(_ e: BoubouEtat) -> some View {
         HStack(alignment: .center, spacing: 14) {
             ZStack {
-                if let sc = sceneApercu ?? foyer.scene {
-                    BoubouSceneView(nom: sc.nom, debut: sc.debut, etat: e)
-                        .id(sc.debut)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                } else {
-                    BoubouPortrait(humeur: e.humeur ?? "calme", dort: e.dort == true, malade: e.malade == true,
-                                   accessoire: e.accessoire, sale: (e.stats?.toilette ?? 100) < 20, size: 54, hop: foyer.bond)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                }
+                // pendant une scène, Boubou est parti la jouer au-dessus de l'onglet
+                BoubouPortrait(humeur: e.humeur ?? "calme", dort: e.dort == true, malade: e.malade == true,
+                               accessoire: e.accessoire, sale: (e.stats?.toilette ?? 100) < 20, size: 54, hop: foyer.bond)
+                    .opacity((sceneApercu ?? foyer.scene) == nil ? 1 : 0.15)
+                    .scaleEffect((sceneApercu ?? foyer.scene) == nil ? 1 : 0.8)
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.75), value: (sceneApercu ?? foyer.scene) == nil)
             .frame(width: 84, height: 66)
             .modifier(Gerbe(emoji: foyer.eclat.emoji, declencheur: foyer.eclat.n, taille: 13))
             VStack(alignment: .leading, spacing: 6) {

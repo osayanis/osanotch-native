@@ -63,8 +63,13 @@ struct BoubouJeu: Codable, Equatable {
 struct BoubouScene: Equatable {
     var nom: String
     var debut: Date
-    static let durees: [String: Double] = ["courses": 4, "bain": 4, "cuisiner": 4, "nourrir": 3,
-                                           "planter": 2.6, "arroser": 2.4, "recolter": 2.8]
+    /// Ce qu'on voit dans la scène : ingrédients, plat mangé, plante… (emojis)
+    var emojis: [String] = []
+    /// cuisine : le plat qui sort de la marmite ("🫕" = mystère)
+    var resultat: String? = nil
+    static let genres: [String: SceneKind] = ["courses": .courses, "bain": .bain, "cuisiner": .cuisine, "nourrir": .repas,
+                                              "planter": .planter, "arroser": .arroser, "recolter": .recolter]
+    static var durees: [String: Double] { genres.mapValues(\.duree) }
 }
 
 /// Gerbe de particules (cœurs, gouttes, étincelles) : `n` change → une nouvelle gerbe part.
@@ -211,6 +216,7 @@ final class BoubouFoyer: ObservableObject {
     /// L'écran change tout de suite (prédiction), le serveur confirme ensuite ; en cas d'échec, on revient en arrière.
     func geste(_ type: String, _ extra: [String: Any] = [:]) {
         guard actif else { return }
+        let avant = etat
         prochainId += 1
         let g = Geste(id: prochainId, type: type, extra: extra)
         attente.append(g)
@@ -219,7 +225,7 @@ final class BoubouFoyer: ObservableObject {
             bond += 1
             eclat = BoubouEclat(emoji: Self.emojiEclat[type] ?? "✨", n: eclat.n + 1)
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-            jouerScene(type)
+            jouerScene(type, extra, avant: avant)
         }
         let precedent = file
         file = Task { [weak self] in
@@ -255,9 +261,25 @@ final class BoubouFoyer: ObservableObject {
     private static let emojiEclat = ["calin": "❤️", "bain": "🫧", "nourrir": "✨", "courses": "🥕", "cuisiner": "✨",
                                      "planter": "🌱", "arroser": "💧", "recolter": "🌟", "dodo": "💤", "reveil": "☀️", "habiller": "✨"]
 
-    private func jouerScene(_ type: String) {
+    private func jouerScene(_ type: String, _ extra: [String: Any], avant: BoubouEtat?) {
         guard let duree = BoubouScene.durees[type] else { return }
-        let s = BoubouScene(nom: type, debut: Date())
+        var s = BoubouScene(nom: type, debut: Date())
+        let j = jeu
+        switch type {
+        case "cuisiner":
+            let ings = extra["ingredients"] as? [String] ?? []
+            s.emojis = ings.map { j?.emoji($0) ?? "🥕" }
+            // la recette que le serveur va trouver (même multiensemble d'ingrédients), sinon le plat mystère
+            let compte = Dictionary(ings.map { ($0, 1) }, uniquingKeysWith: +)
+            s.resultat = j?.recettes?.first { $0.ingredients == compte }?.emoji ?? "🫕"
+        case "nourrir":
+            if let id = (extra["plat"] ?? extra["ingredient"]) as? String { s.emojis = [j?.emoji(id) ?? "🥞"] }
+        case "planter":
+            if let p = extra["plante"] as? String { s.emojis = [j?.emoji(p) ?? "🌱"] }
+        case "arroser", "recolter":
+            if let i = extra["case"] as? Int, let c = avant?.potager?[safe: i] ?? nil, let p = c.plante { s.emojis = [j?.emoji(p) ?? "🥕"] }
+        default: break
+        }
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { scene = s }
         sceneWork?.cancel()
         let w = DispatchWorkItem { [weak self] in
@@ -436,7 +458,8 @@ final class BoubouFoyer: ObservableObject {
             ("cuisine", BoubouPanneau(rubrique: .cuisine, marmite: ["farine", "oeuf"], apercu: true)),
             ("potager", BoubouPanneau(rubrique: .potager, choix: .planter(1), apercu: true)),
             ("journal", BoubouPanneau(rubrique: .journal, apercu: true)),
-            ("scene-courses", BoubouPanneau(rubrique: .soins, apercu: true, sceneApercu: BoubouScene(nom: "courses", debut: Date()))),
+            ("scene-courses", BoubouPanneau(rubrique: .soins, apercu: true, sceneApercu: BoubouScene(nom: "courses", debut: Date().addingTimeInterval(-3)))),
+            ("scene-bain", BoubouPanneau(rubrique: .soins, apercu: true, sceneApercu: BoubouScene(nom: "bain", debut: Date().addingTimeInterval(-2.6)))),
         ]
         for (nom, vue) in scenes {
             let r = ImageRenderer(content: vue.frame(width: 480, height: 352 - 40).background(Color.black).environment(\.colorScheme, .dark))
@@ -485,4 +508,8 @@ final class BoubouFoyer: ObservableObject {
 
     /// Clés UserDefaults propres à l'onglet (pour tout effacer après un test).
     static let cles = ["OsaMochiFoyer", "OsaBoubouJeu", "OsaBoubouEtat", "OsaBoubouMotsVus", "OsaBoubouMalade", "OsaBoubouNiveau"]
+}
+
+private extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

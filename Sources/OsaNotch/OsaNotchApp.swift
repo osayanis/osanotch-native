@@ -5,7 +5,7 @@ import SkyLightWindow
 import AVFoundation
 import EventKit
 
-enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding }
+enum AppView { case home, drop, cast, party, dashboard, choice, notification, onboarding, boubou }
 
 struct OsaNotif: Identifiable, Equatable {
     enum Source { case ai, messages, mail, huisClos, huisClosPoke, disk }
@@ -130,6 +130,11 @@ final class AppModel: ObservableObject {
         friendBridge.onNotice = { [weak self] text in self?.push(OsaNotif(source: .ai, title: "Amis", body: text)) }
         // Mochi (chez Jeanne) a été secoué
         friendBridge.onMochi = { [weak self] name in self?.push(OsaNotif(source: .ai, title: name, body: "\(name) pense à vous 💕")) }
+        // Boubou qu'on élève à deux : mots de Jeanne, rhume, niveau (seulement si un Boubou avec foyer est appairé)
+        MainActor.assumeIsolated {
+            BoubouFoyer.shared.onNotice = { [weak self] titre, texte in self?.push(OsaNotif(source: .ai, title: titre, body: texte)) }
+            BoubouFoyer.shared.demarrer()
+        }
         feed.start()
         suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
         suite.onHuisClosPoke = { [weak self] de in self?.pokeHuisClos(de) }
@@ -303,6 +308,7 @@ enum Island {
         case .choice:       return CGSize(width: 380, height: 160)
         case .notification: return player ? CGSize(width: 480, height: 168) : CGSize(width: 480, height: 160)
         case .onboarding:   return CGSize(width: 480, height: 480)
+        case .boubou:       return CGSize(width: 480, height: 352)
         }
     }
     static func homeRect(_ sf: CGRect) -> CGRect { CGRect(x: sf.midX - 240, y: sf.maxY - 185, width: 480, height: 185) }

@@ -23,6 +23,7 @@ struct TabBarView: View {
             }
             tbButton("square.grid.2x2.fill", .dashboard)
             tbButton("paperplane.fill", .drop)
+            BoubouTabButton(model: model)
             Spacer()
             // Groupe de droite resserré : il se tasse vers le bord et s'éloigne de l'encoche.
             HStack(spacing: 8) {
@@ -52,6 +53,30 @@ struct TabBarView: View {
         Button { model.view = target } label: {
             Image(systemName: icon).font(.system(size: 14)).foregroundColor(model.view == target ? .white : .white.opacity(0.45)).padding(5).contentShape(Rectangle())
         }.buttonStyle(.plain)
+    }
+}
+
+/// Onglet Boubou : n'existe que si le Boubou de Jeanne est appairé avec un foyer. Point rose = mot non lu.
+struct BoubouTabButton: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var foyer = BoubouFoyer.shared
+    @ObservedObject private var bridge = FriendBridge.shared
+
+    var body: some View {
+        if bridge.mochi != nil && bridge.mochiFoyer != nil {
+            Button { model.view = .boubou } label: {
+                Image(systemName: "carrot.fill").font(.system(size: 14))
+                    .foregroundColor(model.view == .boubou ? .white : .white.opacity(0.45))
+                    .padding(5).contentShape(Rectangle())
+                    .overlay(alignment: .topTrailing) {
+                        if foyer.motsNonLus > 0 || foyer.etat?.malade == true {
+                            Circle().fill(Color(red: 1, green: 0.55, blue: 0.65)).frame(width: 6, height: 6).offset(x: -2, y: 3)
+                        }
+                    }
+            }
+            .buttonStyle(.plain)
+            .help("Boubou")
+        }
     }
 }
 

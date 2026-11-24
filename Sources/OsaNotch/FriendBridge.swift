@@ -51,6 +51,11 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
     @Published private(set) var mochi: Friend?
     /// « Jeanne pense à vous » : elle a secoué son Mochi.
     var onMochi: ((String) -> Void)?
+    /// Secret du « foyer » (Boubou qu'on élève à deux, serveur boubou.osalabs.fr) envoyé par Boubou
+    /// dans `mochi_hello`. Gardé à part de l'appairage : les anciens appairages restent valides.
+    @Published private(set) var mochiFoyer: String? = UserDefaults.standard.string(forKey: "OsaMochiFoyer")
+    /// Boubou a changé (geste de Jeanne) : relire l'état tout de suite. Paramètre : le geste (`quoi`).
+    var onBoubouMaj: ((String) -> Void)?
     private var pendingLove: Date? {
         get { UserDefaults.standard.object(forKey: "OsaMochiLoveWaiting") as? Date }
         set { UserDefaults.standard.set(newValue, forKey: "OsaMochiLoveWaiting") }
@@ -155,6 +160,20 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
         send(to: m.code, ["type": "notch_love", "name": myName]) { [weak self] ok in if ok { self?.pendingLove = nil } }
     }
 
+    /// Après un geste de Yanis dans l'onglet Boubou : prévient Boubou de relire l'état.
+    func sendBoubouMaj(quoi: String) {
+        guard let m = mochi else { return }
+        send(to: m.code, ["type": "boubou_maj", "name": myName, "code": myCode, "quoi": quoi]) { _ in }
+    }
+
+    private func setFoyer(_ secret: String) {
+        guard secret.count >= 16, secret.count <= 200,
+              secret.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
+              secret != mochiFoyer else { return }
+        mochiFoyer = secret
+        UserDefaults.standard.set(secret, forKey: "OsaMochiFoyer")
+    }
+
     private func setMochi(name: String, code: String) {
         let m = Friend(name: name.isEmpty ? "Mochi" : name, code: code)
         guard m != mochi else { return }
@@ -201,8 +220,15 @@ final class FriendBridge: NSObject, ObservableObject, URLSessionWebSocketDelegat
             onNotice?("\(who) partage son écran avec toi")
         case "mochi_hello", "mochi_pense":
             guard let code = d["code"] as? String, code.count == 6, code.allSatisfy(\.isNumber) else { return }
+            // Un autre Boubou (réinstallé) prend la place : l'ancien secret de foyer ne vaut plus
+            if let old = mochi, old.code != code, d["foyer"] == nil { mochiFoyer = nil; UserDefaults.standard.removeObject(forKey: "OsaMochiFoyer") }
             setMochi(name: name, code: code)
+            if let f = d["foyer"] as? String { setFoyer(f) }
             if type == "mochi_pense" { onMochi?(name.isEmpty ? "Jeanne" : name) } else { flushMochiLove() }
+        case "boubou_maj":
+            // Seulement le Boubou appairé
+            guard let code = d["code"] as? String, code == mochi?.code else { return }
+            onBoubouMaj?(String((d["quoi"] as? String ?? "").prefix(20)))
         case "party_request":
             guard let c = d["partyCode"] as? String, !c.isEmpty, c.count <= 12 else { return }
             incomingParty.append(PartyRequest(friendName: who, partyCode: c))

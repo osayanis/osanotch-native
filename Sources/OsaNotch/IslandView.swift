@@ -152,6 +152,7 @@ struct IslandView: View {
         case .cast:         OsaCastView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.castBridge).frame(width: 480, height: size.height)
         case .party:        OsaPartyView(model: model, accent: data.accent, back: { model.view = .home }, bridge: model.partyBridge).frame(width: 480, height: size.height)
         case .onboarding:   OnboardingView(model: model, accent: data.accent).frame(width: 480, height: size.height)
+        case .boubou:       BoubouView(model: model, accent: data.accent).frame(width: 480, height: size.height)
         }
     }
 

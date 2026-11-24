@@ -39,7 +39,7 @@ struct BoubouEtat: Decodable, Equatable {
 struct BoubouJeu: Codable, Equatable {
     struct Ingredient: Codable, Equatable { var nom: String?; var emoji: String?; var un: String?; var prix: Int?; var potager: Bool?; var rare: Bool? }
     struct Plante: Codable, Equatable { var heures: Double?; var recolte: Int? }
-    struct Recette: Codable, Equatable { var id: String; var nom: String?; var emoji: String?; var ingredients: [String: Int]?; var soigne: Bool? }
+    struct Recette: Codable, Equatable { var id: String; var nom: String?; var emoji: String?; var ingredients: [String: Int]?; var effets: [String: Int]?; var soigne: Bool? }
     struct Niveau: Codable, Equatable { var n: Int?; var nom: String?; var xp: Int?; var cadeau: String? }
     struct Accessoire: Codable, Equatable { var nom: String?; var emoji: String?; var niveau: Int? }
 
@@ -58,6 +58,18 @@ struct BoubouJeu: Codable, Equatable {
     var plantesTriees: [(String, Plante)] { (plantes ?? [:]).sorted { ($0.value.heures ?? 0) < ($1.value.heures ?? 0) } }
 }
 
+/// Une petite scène jouée à la place du portrait après un geste (courses, bain, cuisine…).
+/// La vue est `BoubouSceneView(nom:debut:etat:)` ; la durée de chaque scène est ici.
+struct BoubouScene: Equatable {
+    var nom: String
+    var debut: Date
+    static let durees: [String: Double] = ["courses": 4, "bain": 4, "cuisiner": 4, "nourrir": 3,
+                                           "planter": 2.6, "arroser": 2.4, "recolter": 2.8]
+}
+
+/// Gerbe de particules (cœurs, gouttes, étincelles) : `n` change → une nouvelle gerbe part.
+struct BoubouEclat: Equatable { var emoji = "✨"; var n = 0 }
+
 // MARK: Client
 
 @MainActor
@@ -69,9 +81,14 @@ final class BoubouFoyer: ObservableObject {
     /// Petite phrase sous les actions (« Panier : 🥚🥛 », erreur du serveur…), effacée toute seule.
     @Published private(set) var flash: String?
     @Published private(set) var flashErreur = false
-    @Published private(set) var occupe = false
-    /// Incrémenté à chaque geste réussi : Boubou fait un petit bond.
+    /// Incrémenté à chaque geste (dès le clic) : Boubou fait un petit bond.
     @Published private(set) var bond = 0
+    /// Scène en cours dans l'en-tête (nil = le portrait).
+    @Published private(set) var scene: BoubouScene?
+    /// Particules qui partent de Boubou à chaque geste.
+    @Published private(set) var eclat = BoubouEclat()
+    /// Des gestes partent ou attendent la réponse du serveur.
+    var occupe: Bool { !attente.isEmpty }
     /// Décalage horloge serveur − horloge locale (pour la pousse du potager).
     private(set) var decalage: TimeInterval = 0
 
@@ -82,6 +99,18 @@ final class BoubouFoyer: ObservableObject {
     private var timer: Timer?
     private var flashWork: DispatchWorkItem?
     private var sinks = Set<AnyCancellable>()
+
+    // Mise à jour optimiste : `confirme` = dernier état du serveur ; `etat` = `confirme` + les gestes
+    // pas encore confirmés, prédits localement. Les gestes partent un par un, dans l'ordre des clics.
+    private struct Geste { let id: Int; let type: String; let extra: [String: Any] }
+    private var confirme: BoubouEtat?
+    @Published private var attente: [Geste] = []
+    private var prochainId = 0
+    private var file: Task<Void, Never>?
+    /// Horloge serveur du dernier état reçu : une réponse plus ancienne (relecture lente) est ignorée.
+    private var dernierServeur: Double = 0
+    private var derniereLecture = Date.distantPast
+    private var sceneWork: DispatchWorkItem?
 
     private static var base: URL {
         let env = ProcessInfo.processInfo.environment["OSA_BOUBOU_API"].flatMap { URL(string: $0) }
@@ -95,6 +124,10 @@ final class BoubouFoyer: ObservableObject {
 
     private init() {
         if let d = UserDefaults.standard.data(forKey: "OsaBoubouJeu"), let j = try? JSONDecoder().decode(BoubouJeu.self, from: d) { jeu = j }
+        // Le dernier état connu : l'onglet n'est jamais vide, même avant la première réponse.
+        if let d = UserDefaults.standard.data(forKey: "OsaBoubouEtat"), let e = try? JSONDecoder().decode(BoubouEtat.self, from: d) {
+            confirme = e; etat = e
+        }
         bridge.onBoubouMaj = { [weak self] _ in Task { @MainActor in await self?.relire() } }
         // Appairage (ou secret) qui arrive / change : on démarre ou on arrête.
         bridge.$mochiFoyer.removeDuplicates().sink { [weak self] _ in
@@ -107,7 +140,7 @@ final class BoubouFoyer: ObservableObject {
 
     func demarrer() {
         timer?.invalidate(); timer = nil
-        guard actif else { etat = nil; return }
+        guard actif else { etat = nil; confirme = nil; attente = []; return }
         Task { await chargerJeu(); await relire() }
         timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.relire() }
@@ -142,39 +175,166 @@ final class BoubouFoyer: ObservableObject {
     private func appliquer(_ rep: [String: Any]) {
         guard let e = rep["etat"], let d = try? JSONSerialization.data(withJSONObject: e),
               let etat = try? JSONDecoder().decode(BoubouEtat.self, from: d) else { return }
-        if let m = etat.maintenant { decalage = m / 1000 - Date().timeIntervalSince1970 }
-        if self.etat != etat { self.etat = etat }
+        if let m = etat.maintenant {
+            guard m >= dernierServeur else { return }
+            dernierServeur = m
+            decalage = m / 1000 - Date().timeIntervalSince1970
+        }
+        confirme = etat
+        UserDefaults.standard.set(d, forKey: "OsaBoubouEtat")
+        recalculer()
         annoncer(etat)
+    }
+
+    /// `etat` = dernier état du serveur + gestes en attente (prédits). Animé : jauges et chiffres glissent.
+    private func recalculer() {
+        guard var e = confirme else { return }
+        for g in attente { e = predire(e, g.type, g.extra) }
+        if e != etat { withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { etat = e } }
     }
 
     func relire() async {
         guard actif else { return }
+        derniereLecture = Date()
         if jeu == nil { await chargerJeu() }
         guard let rep = await requete("api/foyer") else { return }
         appliquer(rep)
     }
 
+    /// Ouverture de l'encoche : relit l'état s'il date de plus de 20 s (sans attendre, l'ancien reste affiché).
+    func relireSiVieux() {
+        guard actif, Date().timeIntervalSince(derniereLecture) > 20 else { return }
+        Task { await relire() }
+    }
+
     /// Un geste de Yanis. `extra` : champs du geste (plat, case, ingredients…).
+    /// L'écran change tout de suite (prédiction), le serveur confirme ensuite ; en cas d'échec, on revient en arrière.
     func geste(_ type: String, _ extra: [String: Any] = [:]) {
-        guard actif, !occupe else { return }
-        occupe = true
-        Task {
-            var corps = extra; corps["qui"] = "yanis"; corps["type"] = type
-            let rep = await requete("api/foyer/action", corps: corps)
-            occupe = false
-            guard let rep else { return montrer("Pas de connexion au foyer", erreur: true) }
-            appliquer(rep)
-            if rep["ok"] as? Bool == true {
-                if type != "lu" {
-                    bond += 1
-                    bridge.sendBoubouMaj(quoi: type)
-                    montrer(phrase(type, rep["resultat"] as? [String: Any] ?? [:]), erreur: false)
-                }
-            } else {
-                let e = rep["erreur"] as? String ?? "Raté"
-                montrer(e == "foyer" ? "Le foyer ne répond pas" : e, erreur: true)
-            }
+        guard actif else { return }
+        prochainId += 1
+        let g = Geste(id: prochainId, type: type, extra: extra)
+        attente.append(g)
+        recalculer()
+        if type != "lu" {
+            bond += 1
+            eclat = BoubouEclat(emoji: Self.emojiEclat[type] ?? "✨", n: eclat.n + 1)
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+            jouerScene(type)
         }
+        let precedent = file
+        file = Task { [weak self] in
+            await precedent?.value
+            await self?.envoyer(g)
+        }
+    }
+
+    private func envoyer(_ g: Geste) async {
+        var corps = g.extra; corps["qui"] = "yanis"; corps["type"] = g.type
+        let rep = await requete("api/foyer/action", corps: corps)
+        attente.removeAll { $0.id == g.id }
+        guard let rep else {
+            recalculer()
+            if scene?.nom == g.type { arreterScene() }
+            return montrer("Pas de connexion au foyer", erreur: true)
+        }
+        appliquer(rep)
+        recalculer()
+        if rep["ok"] as? Bool == true {
+            guard g.type != "lu" else { return }
+            bridge.sendBoubouMaj(quoi: g.type)
+            let r = rep["resultat"] as? [String: Any] ?? [:]
+            if r["niveau"] != nil { NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now) }
+            montrer(phrase(g.type, r), erreur: false)
+        } else {
+            if scene?.nom == g.type { arreterScene() }
+            let e = rep["erreur"] as? String ?? "Raté"
+            montrer(e == "foyer" ? "Le foyer ne répond pas" : e, erreur: true)
+        }
+    }
+
+    private static let emojiEclat = ["calin": "❤️", "bain": "🫧", "nourrir": "✨", "courses": "🥕", "cuisiner": "✨",
+                                     "planter": "🌱", "arroser": "💧", "recolter": "🌟", "dodo": "💤", "reveil": "☀️", "habiller": "✨"]
+
+    private func jouerScene(_ type: String) {
+        guard let duree = BoubouScene.durees[type] else { return }
+        let s = BoubouScene(nom: type, debut: Date())
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { scene = s }
+        sceneWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, self.scene == s else { return }
+            self.arreterScene()
+        }
+        sceneWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + duree, execute: w)
+    }
+
+    private func arreterScene() {
+        sceneWork?.cancel()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { scene = nil }
+    }
+
+    // MARK: Prédiction locale (simple : le serveur a toujours le dernier mot)
+
+    private func predire(_ e0: BoubouEtat, _ type: String, _ x: [String: Any]) -> BoubouEtat {
+        var e = e0
+        let j = jeu
+        func stat(_ k: String, _ d: Int) {
+            var s = e.stats ?? BoubouEtat.Stats()
+            func borne(_ v: Int?) -> Int { max(0, min(100, (v ?? 50) + d)) }
+            switch k {
+            case "ventre": s.ventre = borne(s.ventre)
+            case "calins": s.calins = borne(s.calins)
+            case "toilette": s.toilette = borne(s.toilette)
+            case "energie": s.energie = borne(s.energie)
+            default: break
+            }
+            e.stats = s
+        }
+        func retire(_ dict: inout [String: Int]?, _ k: String, _ n: Int = 1) {
+            var d = dict ?? [:]
+            d[k] = max(0, (d[k] ?? 0) - n)
+            if d[k] == 0 { d[k] = nil }
+            dict = d
+        }
+        switch type {
+        case "calin": stat("calins", 12)
+        case "bain": stat("toilette", 100)
+        case "jouer": stat("calins", 8); stat("energie", -6)
+        case "nourrir":
+            if let p = x["plat"] as? String {
+                retire(&e.frigo, p)
+                for (k, v) in j?.plat(p)?.effets ?? ["ventre": 35] { stat(k, v) }
+                if j?.plat(p)?.soigne == true { e.malade = false }
+            } else if let i = x["ingredient"] as? String {
+                retire(&e.inventaire, i)
+                for (k, v) in j?.cru?[i] ?? ["ventre": 5] { stat(k, v) }
+            }
+        case "dodo": e.dort = true; e.humeur = "dort"
+        case "reveil": e.dort = false; if e.humeur == "dort" { e.humeur = "calme" }
+        case "courses": e.coursesFaites = true
+        case "habiller": e.accessoire = x["accessoire"] as? String
+        case "cuisiner": for i in x["ingredients"] as? [String] ?? [] { retire(&e.inventaire, i) }
+        case "planter", "arroser", "recolter":
+            guard let i = x["case"] as? Int, var cases = e.potager, i >= 0, i < cases.count else { break }
+            let maintenant = (Date().timeIntervalSince1970 + decalage) * 1000
+            if type == "planter", let p = x["plante"] as? String {
+                let h = j?.plantes?[p]?.heures ?? 1
+                cases[i] = BoubouEtat.Case(plante: p, plantee: maintenant, arrosee: false, par: "yanis", prete: false, fin: maintenant + h * 3_600_000)
+            } else if type == "arroser", var c = cases[i] {
+                c.arrosee = true
+                if let debut = c.plantee, let fin = c.fin, fin > maintenant { c.fin = maintenant + (fin - maintenant) * 0.65; _ = debut }
+                cases[i] = c
+            } else if type == "recolter", let c = cases[i], let p = c.plante {
+                var inv = e.inventaire ?? [:]
+                inv[p, default: 0] += j?.plantes?[p]?.recolte ?? 1
+                e.inventaire = inv
+                cases[i] = nil
+            }
+            e.potager = cases
+        case "lu": e.mots = e.mots?.map { var m = $0; m.lu = true; return m }
+        default: break
+        }
+        return e
     }
 
     func marquerLus() {
@@ -264,7 +424,7 @@ final class BoubouFoyer: ObservableObject {
         if let obj = (try? JSONSerialization.jsonObject(with: etat)) as? [String: Any] {
             let e = obj["etat"] ?? obj
             if let d = try? JSONSerialization.data(withJSONObject: e), let v = try? JSONDecoder().decode(BoubouEtat.self, from: d) {
-                f.etat = v
+                f.etat = v; f.confirme = v
                 if let m = v.maintenant { f.decalage = m / 1000 - Date().timeIntervalSince1970 }
             }
         }
@@ -276,6 +436,7 @@ final class BoubouFoyer: ObservableObject {
             ("cuisine", BoubouPanneau(rubrique: .cuisine, marmite: ["farine", "oeuf"], apercu: true)),
             ("potager", BoubouPanneau(rubrique: .potager, choix: .planter(1), apercu: true)),
             ("journal", BoubouPanneau(rubrique: .journal, apercu: true)),
+            ("scene-courses", BoubouPanneau(rubrique: .soins, apercu: true, sceneApercu: BoubouScene(nom: "courses", debut: Date()))),
         ]
         for (nom, vue) in scenes {
             let r = ImageRenderer(content: vue.frame(width: 480, height: 352 - 40).background(Color.black).environment(\.colorScheme, .dark))
@@ -286,6 +447,42 @@ final class BoubouFoyer: ObservableObject {
         }
     }
 
+    /// `OSA_BOUBOU_API=http://127.0.0.1:… OsaNotch essai-boubou` : gestes rapides contre un serveur local,
+    /// vérifie la prédiction immédiate, la file, la confirmation et le retour arrière. Jamais contre la prod.
+    static func essai() async -> Bool {
+        guard let api = ProcessInfo.processInfo.environment["OSA_BOUBOU_API"], api.contains("127.0.0.1") else {
+            print("OSA_BOUBOU_API doit pointer vers un serveur local"); return false
+        }
+        let f = BoubouFoyer.shared
+        f.demarrer()
+        for _ in 0..<50 where f.confirme == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        guard let e0 = f.etat else { print("✗ pas d'état"); return false }
+        var ok = true
+        func verifie(_ titre: String, _ cond: Bool) { print("\(cond ? "✓" : "✗") \(titre)"); if !cond { ok = false } }
+        let c0 = e0.stats?.calins ?? 0, t0 = e0.stats?.toilette ?? 0
+        let horloge = Date()
+        f.geste("calin"); f.geste("calin"); f.geste("bain"); f.geste("planter", ["case": 5, "plante": "carotte"])
+        let immediat = Date().timeIntervalSince(horloge) * 1000
+        verifie(String(format: "4 gestes envoyés sans attendre (%.1f ms)", immediat), immediat < 50)
+        verifie("câlins prédits tout de suite (\(c0) → \(f.etat?.stats?.calins ?? -1))", (f.etat?.stats?.calins ?? 0) == min(100, c0 + 24))
+        verifie("toilette prédite à 100 (\(t0) → \(f.etat?.stats?.toilette ?? -1))", f.etat?.stats?.toilette == 100)
+        verifie("case 5 plantée tout de suite", f.etat?.potager?[5]?.plante == "carotte")
+        verifie("scène lancée (\(f.scene?.nom ?? "-"))", f.scene?.nom == "planter")
+        verifie("occupé pendant l'envoi", f.occupe)
+        await f.file?.value
+        verifie("file vidée", !f.occupe)
+        verifie("état = celui du serveur après confirmation", f.etat == f.confirme)
+        verifie("case 5 confirmée par le serveur", f.confirme?.potager?[5]?.plante == "carotte")
+        // Échec : récolter une case pas mûre → retour en arrière + message
+        let avant = f.etat
+        f.geste("recolter", ["case": 5])
+        verifie("récolte prédite (case vidée)", f.etat?.potager?[5] == nil)
+        await f.file?.value
+        verifie("retour en arrière après refus (case de nouveau plantée)", f.etat?.potager?[5]?.plante == "carotte" && f.etat?.potager == avant?.potager)
+        verifie("message d'erreur affiché (\(f.flash ?? "-"))", f.flashErreur && f.flash != nil)
+        return ok
+    }
+
     /// Clés UserDefaults propres à l'onglet (pour tout effacer après un test).
-    static let cles = ["OsaMochiFoyer", "OsaBoubouJeu", "OsaBoubouMotsVus", "OsaBoubouMalade", "OsaBoubouNiveau"]
+    static let cles = ["OsaMochiFoyer", "OsaBoubouJeu", "OsaBoubouEtat", "OsaBoubouMotsVus", "OsaBoubouMalade", "OsaBoubouNiveau"]
 }

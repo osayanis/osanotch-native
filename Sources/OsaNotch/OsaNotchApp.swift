@@ -95,6 +95,7 @@ final class AppModel: ObservableObject {
     let disks = DiskWatcher()
     let suite = SuiteLink()
     private var suiteSinks = Set<AnyCancellable>()
+    private var boubouSinks = Set<AnyCancellable>()
     let clipboard = ClipboardManager()
     // Ponts persistants : survivent au repli du notch → le stream OsaCast reste vivant
     let dropBridge = DropBridge()
@@ -135,6 +136,10 @@ final class AppModel: ObservableObject {
             BoubouFoyer.shared.onNotice = { [weak self] titre, texte in self?.push(OsaNotif(source: .ai, title: titre, body: texte)) }
             BoubouFoyer.shared.demarrer()
         }
+        // Encoche ouverte : l'onglet Boubou relit l'état en arrière-plan (l'ancien reste affiché).
+        $expanded.removeDuplicates().filter { $0 }.sink { _ in
+            MainActor.assumeIsolated { BoubouFoyer.shared.relireSiVieux() }
+        }.store(in: &boubouSinks)
         feed.start()
         suite.onHuisClos = { [weak self] count in self?.setHuisClos(count) }
         suite.onHuisClosPoke = { [weak self] de in self?.pokeHuisClos(de) }

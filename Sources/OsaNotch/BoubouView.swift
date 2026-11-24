@@ -24,11 +24,21 @@ struct BoubouPanneau: View {
     @State private var rubrique: Rubrique
     @State private var choix: Choix?
     @State private var marmite: [String]
+    /// Une gerbe par bouton (clé = titre) : compteur qui change à chaque clic.
+    @State private var tirs: [String: Int] = [:]
+    /// Sens du glissement entre rubriques (+1 vers la droite).
+    @State private var sens: CGFloat = 1
     private let apercu: Bool
+    private let sceneApercu: BoubouScene?
 
-    init(rubrique: Rubrique = .soins, choix: Choix? = nil, marmite: [String] = [], apercu: Bool = false) {
+    init(rubrique: Rubrique = .soins, choix: Choix? = nil, marmite: [String] = [], apercu: Bool = false, sceneApercu: BoubouScene? = nil) {
         _rubrique = State(initialValue: rubrique); _choix = State(initialValue: choix); _marmite = State(initialValue: marmite)
-        self.apercu = apercu
+        self.apercu = apercu; self.sceneApercu = sceneApercu
+    }
+
+    private var glisse: AnyTransition {
+        .asymmetric(insertion: .opacity.combined(with: .offset(x: 14 * sens)),
+                    removal: .opacity.combined(with: .offset(x: -10 * sens)))
     }
 
     private let rose = Color(red: 1, green: 0.55, blue: 0.65)
@@ -49,6 +59,8 @@ struct BoubouPanneau: View {
                             case .journal: journal(e)
                             }
                         }
+                        .id(rubrique)
+                        .transition(glisse)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         if let f = foyer.flash {
                             Text(f)
@@ -80,15 +92,26 @@ struct BoubouPanneau: View {
 
     func entete(_ e: BoubouEtat) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            BoubouPortrait(humeur: e.humeur ?? "calme", dort: e.dort == true, malade: e.malade == true,
-                           accessoire: e.accessoire, sale: (e.stats?.toilette ?? 100) < 20, size: 54, hop: foyer.bond)
-                .frame(width: 84, height: 66)
+            ZStack {
+                if let sc = sceneApercu ?? foyer.scene {
+                    BoubouSceneView(nom: sc.nom, debut: sc.debut, etat: e)
+                        .id(sc.debut)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                } else {
+                    BoubouPortrait(humeur: e.humeur ?? "calme", dort: e.dort == true, malade: e.malade == true,
+                                   accessoire: e.accessoire, sale: (e.stats?.toilette ?? 100) < 20, size: 54, hop: foyer.bond)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+            .frame(width: 84, height: 66)
+            .modifier(Gerbe(emoji: foyer.eclat.emoji, declencheur: foyer.eclat.n, taille: 13))
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(e.niveau?.nom ?? "P1").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(.white)
                     xpBarre(e).frame(width: 92)
                     Spacer(minLength: 0)
                     Text("⭐ \(e.etoiles ?? 0)").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.7))
+                        .contentTransition(.numericText(value: Double(e.etoiles ?? 0)))
                         .help("Étoiles : Jeanne les gagne en travaillant dans Boubou")
                 }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 6) {
@@ -128,10 +151,11 @@ struct BoubouPanneau: View {
             }
             .frame(height: 5)
             Text("\(v ?? 0)").font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                .contentTransition(.numericText(value: Double(v ?? 0)))
                 .foregroundColor(.white.opacity(0.5)).frame(width: 22, alignment: .trailing)
         }
         .help(nom)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: val)
+        .animation(.spring(response: 0.45, dampingFraction: 0.72), value: val)
     }
 
     // MARK: Rubriques
@@ -139,7 +163,11 @@ struct BoubouPanneau: View {
     var rubriques: some View {
         HStack(spacing: 6) {
             ForEach(Rubrique.allCases, id: \.self) { r in
-                Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { rubrique = r } } label: {
+                Button {
+                    let a = Rubrique.allCases.firstIndex(of: rubrique) ?? 0, b = Rubrique.allCases.firstIndex(of: r) ?? 0
+                    sens = b >= a ? 1 : -1
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { rubrique = r }
+                } label: {
                     HStack(spacing: 4) {
                         Text(r.rawValue)
                         if r == .journal && foyer.motsNonLus > 0 { Circle().fill(rose).frame(width: 5, height: 5) }
@@ -153,31 +181,44 @@ struct BoubouPanneau: View {
                 .buttonStyle(Appui())
             }
             Spacer(minLength: 0)
-            if foyer.occupe { ProgressView().controlSize(.mini).tint(.white) }
+            // Un geste part : simple point qui respire (rien ne bloque, l'écran a déjà changé)
+            Circle().fill(.white.opacity(0.5)).frame(width: 4, height: 4)
+                .opacity(foyer.occupe ? 1 : 0)
+                .animation(.easeInOut(duration: 0.2), value: foyer.occupe)
         }
     }
 
     // MARK: Soins
 
+    func allerA(_ c: Choix?) {
+        sens = c == nil ? -1 : 1
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { choix = c }
+    }
+
     @ViewBuilder func soins(_ e: BoubouEtat) -> some View {
-        if choix == .nourrir { nourrir(e) }
-        else if choix == .habiller { habiller(e) }
+        if choix == .nourrir { nourrir(e).transition(glisse) }
+        else if choix == .habiller { habiller(e).transition(glisse) }
         else {
             let dort = e.dort == true
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                tuile("🤗", "Câlin") { foyer.geste("calin") }
-                tuile("🛁", "Bain", off: dort) { foyer.geste("bain") }
-                tuile("🍽️", "Nourrir", plus: true, off: dort) { choix = .nourrir }
-                tuile("🛒", e.coursesFaites == true ? "Courses faites" : "Faire les courses",
+                tuile("🤗", "Câlin", gerbe: "❤️") { foyer.geste("calin") }
+                tuile("🛁", "Bain", gerbe: "🫧", off: dort) { foyer.geste("bain") }
+                tuile("🍽️", "Nourrir", plus: true, off: dort) { allerA(.nourrir) }
+                tuile("🛒", e.coursesFaites == true ? "Courses faites" : "Faire les courses", cle: "courses", gerbe: "🥕",
                       vedette: e.coursesFaites != true, off: e.coursesFaites == true) { foyer.geste("courses") }
-                tuile(dort ? "☀️" : "💤", dort ? "Réveiller" : "Coucher") { foyer.geste(dort ? "reveil" : "dodo") }
-                tuile("✨", "Habiller", plus: true) { choix = .habiller }
+                tuile(dort ? "☀️" : "💤", dort ? "Réveiller" : "Coucher", cle: "dodo", gerbe: dort ? "☀️" : "💤") { foyer.geste(dort ? "reveil" : "dodo") }
+                tuile("✨", "Habiller", plus: true) { allerA(.habiller) }
             }
+            .transition(glisse)
         }
     }
 
-    func tuile(_ emoji: String, _ titre: String, plus: Bool = false, vedette: Bool = false, off: Bool = false, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    func tuile(_ emoji: String, _ titre: String, cle: String? = nil, gerbe: String? = nil, plus: Bool = false, vedette: Bool = false, off: Bool = false,
+               _ action: @escaping () -> Void) -> some View {
+        Button {
+            if gerbe != nil { tirs[cle ?? titre, default: 0] += 1 }
+            action()
+        } label: {
             HStack(spacing: 7) {
                 Text(emoji).font(.system(size: 15))
                 Text(titre).font(.system(size: 11.5, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
@@ -191,13 +232,14 @@ struct BoubouPanneau: View {
             .contentShape(RoundedRectangle(cornerRadius: 11))
         }
         .buttonStyle(Appui())
-        .disabled(off || foyer.occupe)
+        .disabled(off)
         .opacity(off ? 0.4 : 1)
+        .modifier(Gerbe(emoji: gerbe ?? "✨", declencheur: tirs[cle ?? titre] ?? 0))
     }
 
     func retour(_ titre: String) -> some View {
         HStack(spacing: 6) {
-            Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { choix = nil } } label: {
+            Button { allerA(nil) } label: {
                 Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.7))
                     .frame(width: 22, height: 22).background(Circle().fill(.white.opacity(0.08))).contentShape(Circle())
             }.buttonStyle(Appui())
@@ -218,10 +260,10 @@ struct BoubouPanneau: View {
             Defile(apercu: apercu) {
                 Flux(espace: 6) {
                     ForEach(plats, id: \.key) { k, n in
-                        puce("\(j?.emoji(k) ?? "🍽️") \(j?.nom(k) ?? k)", n: n, fort: true) { foyer.geste("nourrir", ["plat": k]); choix = nil }
+                        puce("\(j?.emoji(k) ?? "🍽️") \(j?.nom(k) ?? k)", n: n, fort: true) { foyer.geste("nourrir", ["plat": k]); allerA(nil) }
                     }
                     ForEach(crus, id: \.key) { k, n in
-                        puce("\(j?.emoji(k) ?? "•") \(j?.nom(k) ?? k)", n: n) { foyer.geste("nourrir", ["ingredient": k]); choix = nil }
+                        puce("\(j?.emoji(k) ?? "•") \(j?.nom(k) ?? k)", n: n) { foyer.geste("nourrir", ["ingredient": k]); allerA(nil) }
                     }
                 }
             }
@@ -235,11 +277,11 @@ struct BoubouPanneau: View {
         return VStack(alignment: .leading, spacing: 8) {
             retour("Garde-robe")
             Flux(espace: 6) {
-                puce("Rien", choisi: e.accessoire == nil) { foyer.geste("habiller", ["accessoire": NSNull()]); choix = nil }
+                puce("Rien", choisi: e.accessoire == nil) { foyer.geste("habiller", ["accessoire": NSNull()]); allerA(nil) }
                 ForEach(tous, id: \.key) { k, a in
                     let ok = dispo.contains(k)
                     puce("\(a.emoji ?? "") \(ok ? (a.nom ?? k) : "Niveau \(j?.niveaux?.first { $0.n == a.niveau }?.nom ?? "?")")",
-                         choisi: e.accessoire == k, off: !ok) { foyer.geste("habiller", ["accessoire": k]); choix = nil }
+                         choisi: e.accessoire == k, off: !ok) { foyer.geste("habiller", ["accessoire": k]); allerA(nil) }
                 }
             }
         }
@@ -258,7 +300,7 @@ struct BoubouPanneau: View {
             .contentShape(Capsule())
         }
         .buttonStyle(Appui())
-        .disabled(off || foyer.occupe)
+        .disabled(off)
         .opacity(off ? 0.35 : 1)
     }
 
@@ -286,6 +328,7 @@ struct BoubouPanneau: View {
                     .help(k.map { j?.nom($0) ?? $0 } ?? "Ingrédient")
                 }
                 Button {
+                    tirs["cuisiner", default: 0] += 1
                     foyer.geste("cuisiner", ["ingredients": marmite])
                     withAnimation(.spring(response: 0.3)) { marmite = [] }
                 } label: {
@@ -294,8 +337,9 @@ struct BoubouPanneau: View {
                         .background(Capsule().fill(vert)).contentShape(Capsule())
                 }
                 .buttonStyle(Appui())
-                .disabled(marmite.count < 2 || foyer.occupe)
+                .disabled(marmite.count < 2)
                 .opacity(marmite.count < 2 ? 0.35 : 1)
+                .modifier(Gerbe(emoji: "🔥", declencheur: tirs["cuisiner"] ?? 0))
                 Spacer(minLength: 0)
                 Text("📖 \(e.recettes?.count ?? 0)/\(j?.recettes?.count ?? 0)")
                     .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.55))
@@ -340,7 +384,7 @@ struct BoubouPanneau: View {
                 HStack(spacing: 6) {
                     Text("Planter :").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.6))
                     ForEach(foyer.jeu?.plantesTriees ?? [], id: \.0) { k, p in
-                        puce("\(foyer.jeu?.emoji(k) ?? "🌱") \(duree(p.heures ?? 0))") { foyer.geste("planter", ["case": i, "plante": k]); choix = nil }
+                        puce("\(foyer.jeu?.emoji(k) ?? "🌱") \(duree(p.heures ?? 0))") { tirs["case\(i)", default: 0] += 1; foyer.geste("planter", ["case": i, "plante": k]); withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { choix = nil } }
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -355,7 +399,7 @@ struct BoubouPanneau: View {
                 let debut = (c.plantee ?? 0) / 1000, fin = (c.fin ?? 0) / 1000
                 let frac = fin > debut ? max(0, min(1, (maintenant - debut) / (fin - debut))) : 1
                 let prete = c.prete == true || maintenant >= fin
-                Button { if prete { foyer.geste("recolter", ["case": i]) } } label: {
+                Button { if prete { tirs["case\(i)", default: 0] += 1; foyer.geste("recolter", ["case": i]) } } label: {
                     VStack(spacing: 4) {
                         Text(foyer.jeu?.emoji(plante) ?? "🌱")
                             .font(.system(size: prete ? 24 : 12 + 10 * frac))
@@ -378,7 +422,7 @@ struct BoubouPanneau: View {
                     .overlay(terre.strokeBorder(.white.opacity(0.06)))
                     .overlay(alignment: .topTrailing) {
                         if !prete && c.arrosee != true {
-                            Button { foyer.geste("arroser", ["case": i]) } label: {
+                            Button { tirs["case\(i)", default: 0] += 1; foyer.geste("arroser", ["case": i]) } label: {
                                 Text("💧").font(.system(size: 10)).frame(width: 20, height: 20)
                                     .background(Circle().fill(.white.opacity(0.12))).contentShape(Circle())
                             }
@@ -388,6 +432,7 @@ struct BoubouPanneau: View {
                     .contentShape(terre)
                 }
                 .buttonStyle(Appui())
+                .modifier(Gerbe(emoji: prete ? "🌟" : "💧", declencheur: tirs["case\(i)"] ?? 0))
                 .help(prete ? "Récolter" : "\(foyer.jeu?.nom(plante) ?? plante)\(c.par.map { " · planté par \($0 == "yanis" ? "toi" : "Jeanne")" } ?? "")")
             } else {
                 Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { choix = choix == .planter(i) ? nil : .planter(i) } } label: {
@@ -470,12 +515,68 @@ struct Defile<Contenu: View>: View {
     }
 }
 
-/// Appui : léger enfoncement (les boutons du notch répondent tout de suite).
+/// Appui : léger enfoncement au clic, léger éclaircissement au survol (les boutons répondent tout de suite).
 struct Appui: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { AppuiCorps(configuration: configuration) }
+}
+
+private struct AppuiCorps: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var actif
+    @State private var survol = false
+    var body: some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .brightness(survol && actif && !configuration.isPressed ? 0.07 : 0)
+            .scaleEffect(configuration.isPressed ? 0.94 : survol && actif ? 1.02 : 1)
+            .animation(.spring(response: 0.18, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: survol)
+            .onHover { survol = $0 }
+    }
+}
+
+/// Gerbe de particules : quand `declencheur` change, quelques emojis jaillissent du bouton et s'effacent.
+struct Gerbe: ViewModifier {
+    var emoji: String
+    var declencheur: Int
+    var taille: CGFloat = 11
+    @State private var vagues: [Vague] = []
+    struct Vague: Identifiable { let id = UUID(); let emoji: String }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                ZStack { ForEach(vagues) { v in Eclats(emoji: v.emoji, taille: taille) } }
+                    .allowsHitTesting(false)
+            }
+            .onChange(of: declencheur) { _, _ in
+                let v = Vague(emoji: emoji)
+                vagues.append(v)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { vagues.removeAll { $0.id == v.id } }
+            }
+    }
+}
+
+private struct Eclats: View {
+    let emoji: String
+    var taille: CGFloat
+    @State private var parti = false
+    @State private var points: [(x: CGFloat, y: CGFloat, r: Double, s: CGFloat)] = (0..<7).map { _ in
+        (.random(in: -38...38), .random(in: -62 ... -24), .random(in: -50...50), .random(in: 0.75...1.15))
+    }
+    var body: some View {
+        ZStack {
+            ForEach(0..<points.count, id: \.self) { i in
+                let p = points[i]
+                Text(emoji).font(.system(size: taille))
+                    .scaleEffect(parti ? p.s : 0.3)
+                    .rotationEffect(.degrees(parti ? p.r : 0))
+                    .offset(x: parti ? p.x : 0, y: parti ? p.y : 0)
+                    .animation(.spring(response: 0.55, dampingFraction: 0.7), value: parti)
+                    .opacity(parti ? 0 : 1)
+                    .animation(.easeIn(duration: 0.8), value: parti)
+            }
+        }
+        .onAppear { DispatchQueue.main.async { parti = true } }
     }
 }
 

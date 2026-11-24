@@ -11,6 +11,11 @@ if CommandLine.arguments.count > 4, CommandLine.arguments[1] == "apercu-boubou" 
     exit(0)
 }
 
+if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "essai-boubou" {
+    Task { @MainActor in exit(await BoubouFoyer.essai() ? 0 : 1) }
+    RunLoop.main.run()
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

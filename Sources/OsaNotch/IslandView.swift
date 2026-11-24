@@ -70,8 +70,8 @@ struct IslandView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: model.expanded)
-        .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.view)
+        .animation(.spring(response: 0.34, dampingFraction: 0.84), value: model.expanded)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: model.view)
         .animation(.spring(response: 0.4, dampingFraction: 0.84), value: model.viewHeight)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showVolumeHUD)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: model.sysObs.showBrightnessHUD)

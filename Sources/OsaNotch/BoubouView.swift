@@ -81,7 +81,7 @@ struct BoubouPanneau: View {
     func entete(_ e: BoubouEtat) -> some View {
         HStack(alignment: .center, spacing: 14) {
             BoubouPortrait(humeur: e.humeur ?? "calme", dort: e.dort == true, malade: e.malade == true,
-                           accessoire: e.accessoire, size: 54, hop: foyer.bond)
+                           accessoire: e.accessoire, sale: (e.stats?.toilette ?? 100) < 20, size: 54, hop: foyer.bond)
                 .frame(width: 84, height: 66)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {

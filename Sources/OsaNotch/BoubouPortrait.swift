@@ -2,12 +2,13 @@ import SwiftUI
 
 /// Boubou tel que le décrit le serveur (`humeur`, `dort`, `malade`, `accessoire`).
 /// Tout le choix de l'expression est ici : BoubouArt.swift reste une copie conforme du dessin
-/// de l'app Boubou (à recopier quand il change, par ex. pour les accessoires dessinés).
+/// de l'app Boubou (accessoires, rhume et taches compris).
 struct BoubouPortrait: View {
     var humeur: String
     var dort: Bool
     var malade: Bool
     var accessoire: String?
+    var sale = false
     var size: CGFloat
     /// Change → petit bond (geste réussi).
     var hop = 0
@@ -16,15 +17,8 @@ struct BoubouPortrait: View {
         if dort {
             BedView(size: size * 1.35)
         } else {
-            Boule(mood: mood, arms: arms, size: size, hop: hop, shadow: false, tilt: malade ? -6 : 0)
-                .overlay(alignment: .topTrailing) {
-                    // En attendant les accessoires dessinés : un petit insigne
-                    if malade {
-                        Text("🤧").font(.system(size: size * 0.26)).offset(x: size * 0.08, y: -size * 0.04)
-                    } else if let a = accessoire, let e = Self.insigne[a] {
-                        Text(e).font(.system(size: size * 0.24)).offset(x: size * 0.08, y: -size * 0.04)
-                    }
-                }
+            Boule(mood: mood, arms: arms, size: size, hop: hop, shadow: false, tilt: malade ? -6 : 0,
+                  accessoire: accessoire, malade: malade, sale: sale)
         }
     }
 
@@ -46,5 +40,4 @@ struct BoubouPortrait: View {
         default: return .rest
         }
     }
-    static let insigne = ["toque": "👨‍🍳", "echarpe": "🧣", "bonnet": "🧶", "lunettes": "👓", "noeud": "🎀", "couronne": "🌸"]
 }
